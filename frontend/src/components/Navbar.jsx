@@ -26,6 +26,7 @@ export default function Navbar() {
       <nav>
         <Link to="/dashboard">Dashboard</Link>
         <Link to="/upload">New Interview</Link>
+        <Link to="/coding">Coding Sandbox</Link>
         <span className="user-chip">👤 {name || "Candidate"}</span>
         <button className="link-btn" onClick={logout}>
           Log out

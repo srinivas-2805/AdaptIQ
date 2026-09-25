@@ -20,6 +20,7 @@ export default function Interview() {
   const [micActive, setMicActive] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [aiSpeaking, setAiSpeaking] = useState(false);
+  const [wsConnected, setWsConnected] = useState(false);
 
   // --- Real-Time Vision & Audio Telemetry ---
   const [eyeContactPct, setEyeContactPct] = useState(82);
@@ -41,15 +42,18 @@ export default function Interview() {
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
   const visionLoopRef = useRef(null);
+  const wsRef = useRef(null);
 
   useEffect(() => {
     if (!question) {
       fetchCurrent();
     }
     initCameraAndMic();
+    initWebSocket();
 
     return () => {
       stopCameraAndMic();
+      closeWebSocket();
       if (recognitionRef.current) {
         recognitionRef.current.stop();
       }
@@ -62,6 +66,76 @@ export default function Interview() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function initWebSocket() {
+    try {
+      const host = window.location.hostname || "localhost";
+      const wsUrl = `ws://${host}:8080/ws/interview`;
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        setWsConnected(true);
+        // Send initial WebRTC signaling packet
+        ws.send(JSON.stringify({
+          type: "WEBRTC_SIGNAL",
+          data: { action: "INITIATE_SESSION", sessionId }
+        }));
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === "TELEMETRY_ACK") {
+            // Heartbeat acknowledged by Spring Boot backend
+          }
+        } catch {
+          // Ignore non-json
+        }
+      };
+
+      ws.onclose = () => {
+        setWsConnected(false);
+      };
+
+      ws.onerror = (err) => {
+        console.warn("WebSocket telemetry channel error:", err);
+        setWsConnected(false);
+      };
+    } catch (e) {
+      console.warn("WebSocket init error:", e);
+    }
+  }
+
+  function closeWebSocket() {
+    if (wsRef.current) {
+      try {
+        wsRef.current.close();
+      } catch {}
+      wsRef.current = null;
+    }
+  }
+
+  // Periodic Telemetry Heartbeat Broadcast
+  useEffect(() => {
+    if (!wsConnected || !wsRef.current) return;
+    const interval = setInterval(() => {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({
+          type: "TELEMETRY",
+          data: {
+            sessionId,
+            eyeContactPercentage: eyeContactPct,
+            posture: postureStatus,
+            volume: volumeLevel,
+            timestamp: Date.now()
+          }
+        }));
+      }
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, [wsConnected, eyeContactPct, postureStatus, volumeLevel, sessionId]);
 
   // When a new question arrives, speak it out loud
   useEffect(() => {
@@ -446,6 +520,9 @@ export default function Interview() {
                 </div>
                 <div className="hud-pill">
                   🧍 Posture: <strong>{postureStatus}</strong>
+                </div>
+                <div className="hud-pill" style={{ background: wsConnected ? "rgba(16, 185, 129, 0.85)" : "rgba(245, 158, 11, 0.85)" }}>
+                  {wsConnected ? "🟢 Telemetry: Connected" : "🟡 Telemetry: Connecting..."}
                 </div>
                 <div className="hud-pill">
                   🎙️ Voice Level:

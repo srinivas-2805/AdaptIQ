@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import Navbar from "./components/Navbar.jsx";
 import Welcome from "./pages/Welcome.jsx";
 import Login from "./pages/Login.jsx";
@@ -7,6 +7,7 @@ import Upload from "./pages/Upload.jsx";
 import Interview from "./pages/Interview.jsx";
 import Report from "./pages/Report.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
+import CodingRound from "./pages/CodingRound.jsx";
 
 function isAuthenticated() {
   return !!localStorage.getItem("adaptiq_token");
@@ -17,10 +18,13 @@ function ProtectedRoute({ children }) {
 }
 
 export default function App() {
+  const location = useLocation();
+  const isWelcome = location.pathname === "/";
+
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${isWelcome ? "welcome-shell" : ""}`}>
       <Navbar />
-      <main className="app-content">
+      <main className={isWelcome ? "app-content-full" : "app-content"}>
         <Routes>
           <Route path="/" element={<Welcome />} />
           <Route
@@ -54,6 +58,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <Report />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/coding"
+            element={
+              <ProtectedRoute>
+                <CodingRound />
               </ProtectedRoute>
             }
           />

@@ -47,7 +47,10 @@ export default function Report() {
           <h1>Multimodal Interview Evaluation Report</h1>
           <p className="muted">Session #{sessionId} • Comprehensive performance breakdown & explainable feedback</p>
         </div>
-        <div style={{ display: "flex", gap: "10px" }}>
+        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+          <Link to="/coding" className="btn-secondary" style={{ textDecoration: "none", padding: "10px 16px", background: "#f0fdf4", color: "#166534", border: "1px solid #86efac", fontWeight: "600" }}>
+            💻 Coding Round
+          </Link>
           <Link to="/dashboard" className="btn-secondary" style={{ textDecoration: "none", padding: "10px 16px" }}>
             📊 Progress Dashboard
           </Link>
@@ -257,9 +260,12 @@ export default function Report() {
         </div>
       </div>
 
-      <div style={{ textAlign: "center", margin: "32px 0" }}>
-        <Link to="/upload" style={{ textDecoration: "none", padding: "14px 32px", background: "#2563eb", color: "white", borderRadius: "8px", fontWeight: "700", fontSize: "16px" }}>
+      <div style={{ textAlign: "center", margin: "32px 0", display: "flex", justifyContent: "center", gap: "16px", flexWrap: "wrap" }}>
+        <Link to="/upload" style={{ textDecoration: "none", padding: "14px 28px", background: "#2563eb", color: "white", borderRadius: "8px", fontWeight: "700", fontSize: "15px" }}>
           🚀 Start Another Mock Interview
+        </Link>
+        <Link to="/coding" style={{ textDecoration: "none", padding: "14px 28px", background: "#16a34a", color: "white", borderRadius: "8px", fontWeight: "700", fontSize: "15px" }}>
+          💻 Practice Technical Coding Sandbox Round →
         </Link>
       </div>
     </div>
