@@ -27,6 +27,18 @@ public class User {
     @Column(nullable = false)
     private String passwordHash;
 
+    @Column(name = "auth_provider")
+    private String authProvider = "LOCAL";
+
+    @Column(name = "provider_id")
+    private String providerId;
+
+    @Column(name = "reset_token")
+    private String resetToken;
+
+    @Column(name = "reset_token_expiry")
+    private LocalDateTime resetTokenExpiry;
+
     @Column(nullable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 }

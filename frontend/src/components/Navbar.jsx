@@ -7,8 +7,9 @@ export default function Navbar() {
   const token = localStorage.getItem("adaptiq_token");
   const name = localStorage.getItem("adaptiq_name");
 
-  // Never display the navbar on the Welcome page ('/'), and never display before login
-  if (!token || location.pathname === "/") {
+  // Never display the navbar on the Welcome page or unauthenticated auth pages
+  const publicPages = ["/", "/login", "/register", "/forgot-password", "/oauth/callback"];
+  if (!token || publicPages.includes(location.pathname)) {
     return null;
   }
 

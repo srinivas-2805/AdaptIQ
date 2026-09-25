@@ -3,6 +3,8 @@ import Navbar from "./components/Navbar.jsx";
 import Welcome from "./pages/Welcome.jsx";
 import Login from "./pages/Login.jsx";
 import Register from "./pages/Register.jsx";
+import ForgotPassword from "./pages/ForgotPassword.jsx";
+import OAuthCallback from "./pages/OAuthCallback.jsx";
 import Upload from "./pages/Upload.jsx";
 import Interview from "./pages/Interview.jsx";
 import Report from "./pages/Report.jsx";
@@ -19,12 +21,12 @@ function ProtectedRoute({ children }) {
 
 export default function App() {
   const location = useLocation();
-  const isWelcome = location.pathname === "/";
+  const isDarkShell = ["/", "/login", "/register", "/forgot-password", "/oauth/callback"].includes(location.pathname);
 
   return (
-    <div className={`app-shell ${isWelcome ? "welcome-shell" : ""}`}>
+    <div className={`app-shell ${isDarkShell ? "welcome-shell" : ""}`}>
       <Navbar />
-      <main className={isWelcome ? "app-content-full" : "app-content"}>
+      <main className={isDarkShell ? "app-content-full" : "app-content"}>
         <Routes>
           <Route path="/" element={<Welcome />} />
           <Route
@@ -37,6 +39,8 @@ export default function App() {
           />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/oauth/callback" element={<OAuthCallback />} />
           <Route
             path="/upload"
             element={

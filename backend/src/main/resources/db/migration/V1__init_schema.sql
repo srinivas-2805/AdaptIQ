@@ -7,6 +7,10 @@ CREATE TABLE IF NOT EXISTS users (
     name VARCHAR(255) NOT NULL,
     email VARCHAR(255) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
+    auth_provider VARCHAR(32) DEFAULT 'LOCAL',
+    provider_id VARCHAR(255),
+    reset_token VARCHAR(255),
+    reset_token_expiry TIMESTAMP NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

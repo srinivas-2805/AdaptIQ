@@ -47,6 +47,10 @@ services:
       JWT_SECRET: ${JWT_SECRET:-adaptiq-dev-secret-change-me-adaptiq-dev-secret-change-me}
       AI_SERVICE_URL: http://ai-service:8001
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
     ports:
       - "8080:8080"
 
@@ -55,6 +59,8 @@ services:
       context: ./frontend
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080/api}
+        VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
+        VITE_GITHUB_CLIENT_ID: ${VITE_GITHUB_CLIENT_ID:-}
     container_name: adaptiq-frontend
     restart: unless-stopped
     depends_on:
