@@ -28,7 +28,6 @@ export default function OAuthCallback() {
       return;
     }
 
-    // Guard against React StrictMode duplicate code execution
     if (
       processedOAuthCodeRef.current ||
       sessionStorage.getItem("adaptiq_consumed_code") === code
@@ -37,8 +36,6 @@ export default function OAuthCallback() {
     }
     processedOAuthCodeRef.current = true;
     sessionStorage.setItem("adaptiq_consumed_code", code);
-
-    // Immediately clear URL query parameters
     window.history.replaceState({}, document.title, window.location.pathname);
 
     const provider = state || sessionStorage.getItem("adaptiq_oauth_provider") || "google";
