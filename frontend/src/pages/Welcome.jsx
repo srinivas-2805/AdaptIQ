@@ -483,10 +483,6 @@ export default function Welcome() {
               Explainable, Multimodal AI Interview Coach with Personalized Skill-Gap Analysis.
             </p>
           </div>
-
-          {/* <div className="footer-tech-stack">
-            <span>Powered by Spring Boot 3 • Python FastAPI • React 18 • MySQL 8 • MediaPipe</span>
-          </div> */}
         </div>
       </footer>
     </div>
