@@ -92,7 +92,11 @@ public class InterviewDtos {
             Double bestScore,
             Map<String, Double> dimensionAverages,
             List<String> topStrengths,
-            List<String> recurringGaps
+            List<String> recurringGaps,
+            Double avgSpeakingSpeedWpm,
+            Double avgFillerWordCount,
+            Double avgEyeContactPercentage,
+            Double avgPostureScore
     ) {}
 
     public record CurrentQuestionResponse(QuestionDto question, boolean sessionComplete) {}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api.js";
 
@@ -98,6 +98,14 @@ export default function Upload() {
     setActiveTab("paste");
     setError("");
   }
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sampleIdx = params.get("sample");
+    if (sampleIdx !== null && SAMPLE_PROFILES[sampleIdx]) {
+      loadSample(SAMPLE_PROFILES[sampleIdx]);
+    }
+  }, []);
 
   async function handleFileChange(e) {
     const selected = e.target.files[0];

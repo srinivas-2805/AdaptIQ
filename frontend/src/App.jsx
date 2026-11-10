@@ -21,7 +21,7 @@ function ProtectedRoute({ children }) {
 
 export default function App() {
   const location = useLocation();
-  const isDarkShell = ["/", "/login", "/register", "/forgot-password", "/oauth/callback"].includes(location.pathname);
+  const isDarkShell = ["/", "/login", "/register", "/forgot-password", "/oauth/callback", "/dashboard"].includes(location.pathname);
 
   return (
     <div className={`app-shell ${isDarkShell ? "welcome-shell" : ""}`}>

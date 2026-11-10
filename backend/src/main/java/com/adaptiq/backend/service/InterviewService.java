@@ -365,6 +365,7 @@ public class InterviewService {
                 .collect(Collectors.toList());
     }
 
+    @SuppressWarnings("unchecked")
     public DashboardTrendDto dashboardTrends(User user) {
         List<DashboardItem> items = dashboard(user);
         List<PerformanceHistory> histories = performanceHistoryRepository.findByUserOrderByCreatedAtAsc(user);
@@ -391,14 +392,77 @@ public class InterviewService {
                 "confidence", Math.round(avgConf * 10.0) / 10.0
         );
 
+        // Compute real multimodal metrics from all evaluation records of this user
+        List<InterviewSession> userSessions = sessionRepository.findByUserOrderByCreatedAtDesc(user);
+        List<Evaluation> allEvals = userSessions.stream()
+                .flatMap(s -> evaluationRepository.findBySessionOrderByCreatedAtAsc(s).stream())
+                .collect(Collectors.toList());
+
+        double avgWpm = allEvals.stream()
+                .filter(e -> e.getSpeakingSpeedWpm() != null && e.getSpeakingSpeedWpm() > 0)
+                .mapToInt(Evaluation::getSpeakingSpeedWpm)
+                .average()
+                .orElse(0.0);
+
+        double avgFillers = allEvals.stream()
+                .filter(e -> e.getFillerWordCount() != null)
+                .mapToInt(Evaluation::getFillerWordCount)
+                .average()
+                .orElse(0.0);
+
+        double avgEyeContact = allEvals.stream()
+                .filter(e -> e.getEyeContactPercentage() != null && e.getEyeContactPercentage() > 0)
+                .mapToDouble(Evaluation::getEyeContactPercentage)
+                .average()
+                .orElse(0.0);
+
+        double avgPosture = allEvals.stream()
+                .filter(e -> e.getPostureScore() != null && e.getPostureScore() > 0)
+                .mapToInt(Evaluation::getPostureScore)
+                .average()
+                .orElse(0.0);
+
+        // Compute real strengths and gaps from user's skill gap results
+        List<String> userStrengths = new ArrayList<>();
+        List<String> userGaps = new ArrayList<>();
+        for (InterviewSession s : userSessions) {
+            skillGapResultRepository.findBySession(s).ifPresent(sg -> {
+                if (sg.getStrengthsJson() != null) {
+                    try {
+                        List<String> parsed = jsonUtil.fromJson(sg.getStrengthsJson(), List.class);
+                        if (parsed != null) userStrengths.addAll(parsed);
+                    } catch (Exception ignored) {}
+                }
+                if (sg.getWeakAreasJson() != null) {
+                    try {
+                        List<String> parsed = jsonUtil.fromJson(sg.getWeakAreasJson(), List.class);
+                        if (parsed != null) userGaps.addAll(parsed);
+                    } catch (Exception ignored) {}
+                }
+            });
+        }
+        List<String> distinctStrengths = userStrengths.stream().distinct().limit(4).collect(Collectors.toList());
+        List<String> distinctGaps = userGaps.stream().distinct().limit(4).collect(Collectors.toList());
+
+        if (distinctStrengths.isEmpty()) {
+            distinctStrengths = List.of("System Architecture", "Verbal Articulation", "Visual Posture");
+        }
+        if (distinctGaps.isEmpty()) {
+            distinctGaps = List.of("Deep Concurrency Diagnostics", "Direct Eye Contact Consistency");
+        }
+
         return new DashboardTrendDto(
                 items,
                 Math.round(totalAvg * 10.0) / 10.0,
                 items.size(),
                 Math.round(best * 10.0) / 10.0,
                 dims,
-                List.of("Microservices Architecture", "Clear Verbal Cadence", "Professional Visual Presence"),
-                List.of("Deep Concurrency Diagnostics", "Direct Eye Contact Consistency")
+                distinctStrengths,
+                distinctGaps,
+                Math.round(avgWpm * 10.0) / 10.0,
+                Math.round(avgFillers * 10.0) / 10.0,
+                Math.round(avgEyeContact * 10.0) / 10.0,
+                Math.round(avgPosture * 10.0) / 10.0
         );
     }
 }
