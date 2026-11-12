@@ -46,6 +46,27 @@ public class AiServiceClient {
     }
 
     @SuppressWarnings("unchecked")
+    public Map<String, Object> generateAdaptiveQuestion(
+            List<String> skills, List<String> projects, List<String> requirements,
+            String previousQuestion, String previousAnswer, String previousTopic,
+            Integer previousScore, String currentDifficulty, List<String> askedTopics,
+            int roundNumber) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("skills", skills != null ? skills : List.of());
+        payload.put("projects", projects != null ? projects : List.of());
+        payload.put("requirements", requirements != null ? requirements : List.of());
+        if (previousQuestion != null) payload.put("previousQuestion", previousQuestion);
+        if (previousAnswer != null) payload.put("previousAnswer", previousAnswer);
+        if (previousTopic != null) payload.put("previousTopic", previousTopic);
+        if (previousScore != null) payload.put("previousScore", previousScore);
+        payload.put("currentDifficulty", currentDifficulty != null ? currentDifficulty : "medium");
+        payload.put("askedTopics", askedTopics != null ? askedTopics : List.of());
+        payload.put("roundNumber", roundNumber);
+        var body = jsonBody(payload);
+        return restTemplate.postForObject(baseUrl + "/generate-adaptive-question", body, Map.class);
+    }
+
+    @SuppressWarnings("unchecked")
     public Map<String, Object> evaluateAnswer(String questionText, String topic, String difficulty, String answerText,
                                              Map<String, Object> audioMetrics, Map<String, Object> visionMetrics) {
         Map<String, Object> payload = new HashMap<>();
@@ -75,8 +96,16 @@ public class AiServiceClient {
     }
 
     @SuppressWarnings("unchecked")
-    public Map<String, Object> skillGap(List<Map<String, Object>> qaHistory) {
-        var body = jsonBody(Map.of("qaHistory", qaHistory));
+    public Map<String, Object> skillGap(List<Map<String, Object>> qaHistory,
+                                        List<String> resumeSkills,
+                                        List<String> resumeProjects,
+                                        List<String> jdRequirements) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("qaHistory", qaHistory != null ? qaHistory : List.of());
+        payload.put("resumeSkills", resumeSkills != null ? resumeSkills : List.of());
+        payload.put("resumeProjects", resumeProjects != null ? resumeProjects : List.of());
+        payload.put("jdRequirements", jdRequirements != null ? jdRequirements : List.of());
+        var body = jsonBody(payload);
         return restTemplate.postForObject(baseUrl + "/skill-gap", body, Map.class);
     }
 

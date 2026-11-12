@@ -253,14 +253,6 @@ export default function Dashboard() {
                 <span>Launch Mock Interview</span>
               </Link>
 
-              <Link to="/coding" className="btn-dash-secondary">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="16 18 22 12 16 6"></polyline>
-                  <polyline points="8 6 2 12 8 18"></polyline>
-                </svg>
-                <span>Coding Sandbox</span>
-              </Link>
-
               <button
                 type="button"
                 className="btn-dash-accent"
@@ -788,63 +780,6 @@ export default function Dashboard() {
                 </div>
               );
             })}
-          </div>
-        </section>
-
-        {/* Technical Coding Sandbox Round Fast-Track */}
-        <section className="dash-card" style={{ marginBottom: "28px" }}>
-          <div className="dash-card-header">
-            <div>
-              <h3 className="dash-card-title">
-                <span>💻</span>
-                <span>Technical Coding Sandbox Rounds</span>
-              </h3>
-              <span className="dash-card-subtitle">
-                Isolated in-browser code execution sandbox for Python and JavaScript with test case validation & Big-O measurement
-              </span>
-            </div>
-
-            <Link
-              to="/coding"
-              style={{
-                textDecoration: "none",
-                fontSize: "12.5px",
-                fontWeight: "700",
-                color: "#38bdf8"
-              }}
-            >
-              Open Sandbox →
-            </Link>
-          </div>
-
-          <div className="dash-coding-showcase">
-            <Link to="/coding?id=two-sum" className="coding-mini-card">
-              <div className="coding-mini-info">
-                <h4>Two Sum — Hash Map Optimization</h4>
-                <p>
-                  <span style={{ color: "#34d399", fontWeight: "700" }}>Easy</span>
-                  <span>• Array & Hash Table</span>
-                  <span>• 3 Test Cases</span>
-                </p>
-              </div>
-              <span className="btn-dash-secondary" style={{ padding: "6px 12px", fontSize: "12px" }}>
-                Solve →
-              </span>
-            </Link>
-
-            <Link to="/coding?id=valid-parentheses" className="coding-mini-card">
-              <div className="coding-mini-info">
-                <h4>Valid Parentheses — Stack Evaluation</h4>
-                <p>
-                  <span style={{ color: "#34d399", fontWeight: "700" }}>Easy</span>
-                  <span>• Stack & String Matching</span>
-                  <span>• 3 Test Cases</span>
-                </p>
-              </div>
-              <span className="btn-dash-secondary" style={{ padding: "6px 12px", fontSize: "12px" }}>
-                Solve →
-              </span>
-            </Link>
           </div>
         </section>
 

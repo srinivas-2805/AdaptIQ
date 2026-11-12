@@ -44,6 +44,7 @@ public class Evaluation {
     private Integer clarityScore;
     private Double eyeContactPercentage;
     private Integer postureScore;
+    @Column(columnDefinition = "TEXT")
     private String postureNote;
 
     @Lob

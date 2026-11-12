@@ -30,7 +30,8 @@ public class InterviewDtos {
             Long questionId,
             String answerText,
             AudioMetricsDto audioMetrics,
-            VisionMetricsDto visionMetrics
+            VisionMetricsDto visionMetrics,
+            Boolean finishSession
     ) {}
 
     public record EvaluationDto(
@@ -62,7 +63,7 @@ public class InterviewDtos {
             EvaluationDto evaluation
     ) {}
 
-    public record SkillGapDto(List<String> weakAreas, List<String> strengths, Double averageScore) {}
+    public record SkillGapDto(List<String> weakAreas, List<String> strengths, List<String> missingJdSkills, Double averageScore) {}
 
     public record PrepDayDto(int day, String focus, List<String> tasks) {}
 

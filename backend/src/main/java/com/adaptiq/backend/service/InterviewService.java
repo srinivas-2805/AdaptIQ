@@ -3,6 +3,10 @@ package com.adaptiq.backend.service;
 import com.adaptiq.backend.dto.InterviewDtos.*;
 import com.adaptiq.backend.model.*;
 import com.adaptiq.backend.repository.*;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -14,6 +18,8 @@ import java.util.stream.Collectors;
 @Service
 public class InterviewService {
 
+    private static final Logger log = LoggerFactory.getLogger(InterviewService.class);
+
     private final InterviewSessionRepository sessionRepository;
     private final ResumeRepository resumeRepository;
     private final JobDescriptionRepository jobDescriptionRepository;
@@ -24,7 +30,9 @@ public class InterviewService {
     private final SkillGapResultRepository skillGapResultRepository;
     private final PreparationPlanRepository preparationPlanRepository;
     private final AiServiceClient aiServiceClient;
+    private final GeminiService geminiService;
     private final JsonUtil jsonUtil;
+    private final ObjectMapper objectMapper;
 
     private static final int ABSOLUTE_MAX_QUESTIONS = 10;
 
@@ -38,6 +46,7 @@ public class InterviewService {
                              SkillGapResultRepository skillGapResultRepository,
                              PreparationPlanRepository preparationPlanRepository,
                              AiServiceClient aiServiceClient,
+                             GeminiService geminiService,
                              JsonUtil jsonUtil) {
         this.sessionRepository = sessionRepository;
         this.resumeRepository = resumeRepository;
@@ -49,7 +58,9 @@ public class InterviewService {
         this.skillGapResultRepository = skillGapResultRepository;
         this.preparationPlanRepository = preparationPlanRepository;
         this.aiServiceClient = aiServiceClient;
+        this.geminiService = geminiService;
         this.jsonUtil = jsonUtil;
+        this.objectMapper = new ObjectMapper();
     }
 
     @SuppressWarnings("unchecked")
@@ -67,9 +78,10 @@ public class InterviewService {
         }
 
         List<String> skills = jsonUtil.toStringList(resume.getExtractedSkillsJson());
+        List<String> projects = jsonUtil.toStringList(resume.getExtractedProjectsJson());
         List<String> requirements = jd != null ? jsonUtil.toStringList(jd.getExtractedRequirementsJson()) : List.of();
 
-        int count = request.questionCount() != null ? Math.min(request.questionCount(), 8) : 5;
+        int count = request.questionCount() != null ? request.questionCount() : 5;
 
         InterviewSession session = new InterviewSession();
         session.setUser(user);
@@ -78,20 +90,20 @@ public class InterviewService {
         session.setPlannedQuestionCount(count);
         sessionRepository.save(session);
 
-        List<Map<String, Object>> generated = aiServiceClient.generateQuestions(skills, requirements, count);
+        // Generate opening adaptive question tailored to candidate profile and target role
+        Map<String, Object> initialQ = generateAdaptiveQuestionInternal(
+                skills, projects, requirements, null, null, null, null, "medium", List.of(), 1);
 
-        List<QuestionDto> questionDtos = generated.stream().map(g -> {
-            Question q = new Question();
-            q.setSession(session);
-            q.setText((String) g.get("text"));
-            q.setTopic((String) g.get("topic"));
-            q.setDifficulty((String) g.get("difficulty"));
-            q.setOrderIndex(questionRepository.findBySessionOrderByOrderIndexAsc(session).size() + 1);
-            questionRepository.save(q);
-            return new QuestionDto(q.getId(), q.getText(), q.getTopic(), q.getDifficulty());
-        }).collect(Collectors.toList());
+        Question q = new Question();
+        q.setSession(session);
+        q.setText((String) initialQ.get("text"));
+        q.setTopic((String) initialQ.get("topic"));
+        q.setDifficulty((String) initialQ.getOrDefault("difficulty", "medium"));
+        q.setOrderIndex(1);
+        questionRepository.save(q);
 
-        return new StartResponse(session.getId(), questionDtos);
+        QuestionDto questionDto = new QuestionDto(q.getId(), q.getText(), q.getTopic(), q.getDifficulty());
+        return new StartResponse(session.getId(), List.of(questionDto));
     }
 
     @SuppressWarnings("unchecked")
@@ -113,7 +125,7 @@ public class InterviewService {
         Map<String, Object> audioMap = request.audioMetrics() != null ? jsonUtil.toMap(jsonUtil.toJson(request.audioMetrics())) : null;
         Map<String, Object> visionMap = request.visionMetrics() != null ? jsonUtil.toMap(jsonUtil.toJson(request.visionMetrics())) : null;
 
-        Map<String, Object> result = aiServiceClient.evaluateAnswer(
+        Map<String, Object> result = evaluateAnswerInternal(
                 question.getText(), question.getTopic(), question.getDifficulty(), request.answerText(),
                 audioMap, visionMap);
 
@@ -174,35 +186,36 @@ public class InterviewService {
 
         List<Question> allQuestions = questionRepository.findBySessionOrderByOrderIndexAsc(session);
         long answeredCount = allQuestions.stream().filter(q -> answerRepository.findByQuestion(q).isPresent()).count();
-        int maxAllowed = session.getPlannedQuestionCount();
 
-        boolean sessionComplete = answeredCount >= maxAllowed;
+        boolean finishRequested = Boolean.TRUE.equals(request.finishSession());
+        boolean sessionComplete = finishRequested || answeredCount >= 20;
         QuestionDto followUp = null;
 
         if (!sessionComplete) {
-            String nextDifficulty = (String) result.getOrDefault("nextDifficulty", question.getDifficulty());
-            int nextOrderIndex = question.getOrderIndex() + 1;
+            List<String> askedTopics = allQuestions.stream().map(Question::getTopic).collect(Collectors.toList());
+            List<String> skills = jsonUtil.toStringList(session.getResume().getExtractedSkillsJson());
+            List<String> projects = jsonUtil.toStringList(session.getResume().getExtractedProjectsJson());
+            List<String> requirements = session.getJobDescription() != null
+                    ? jsonUtil.toStringList(session.getJobDescription().getExtractedRequirementsJson())
+                    : List.of();
 
-            Optional<Question> preGenerated = allQuestions.stream()
-                    .filter(q -> q.getOrderIndex() == nextOrderIndex)
-                    .findFirst();
+            String currentDiff = question.getDifficulty();
+            Integer previousScore = answer.getOverallScore();
 
-            Question next;
-            if (preGenerated.isPresent()) {
-                next = preGenerated.get();
-                next.setDifficulty(nextDifficulty);
-                questionRepository.save(next);
-            } else {
-                String followUpText = aiServiceClient.generateFollowUp(
-                        question.getText(), request.answerText(), question.getTopic());
-                next = new Question();
-                next.setSession(session);
-                next.setText(followUpText);
-                next.setTopic(question.getTopic());
-                next.setDifficulty(nextDifficulty);
-                next.setOrderIndex(allQuestions.size() + 1);
-                questionRepository.save(next);
-            }
+            // Generate next question adaptively based on candidate's previous response and untested skills
+            Map<String, Object> nextQ = generateAdaptiveQuestionInternal(
+                    skills, projects, requirements,
+                    question.getText(), request.answerText(), question.getTopic(),
+                    previousScore, currentDiff, askedTopics, (int) answeredCount + 1);
+
+            Question next = new Question();
+            next.setSession(session);
+            next.setText((String) nextQ.get("text"));
+            next.setTopic((String) nextQ.get("topic"));
+            next.setDifficulty((String) nextQ.getOrDefault("difficulty", "medium"));
+            next.setOrderIndex(allQuestions.size() + 1);
+            questionRepository.save(next);
+
             followUp = new QuestionDto(next.getId(), next.getText(), next.getTopic(), next.getDifficulty());
         } else {
             finalizeSession(session);
@@ -298,19 +311,27 @@ public class InterviewService {
                 })
                 .collect(Collectors.toList());
 
-        Map<String, Object> gapResult = aiServiceClient.skillGap(qaForAi);
+        List<String> resumeSkills = jsonUtil.toStringList(session.getResume().getExtractedSkillsJson());
+        List<String> resumeProjects = jsonUtil.toStringList(session.getResume().getExtractedProjectsJson());
+        List<String> jdRequirements = session.getJobDescription() != null
+                ? jsonUtil.toStringList(session.getJobDescription().getExtractedRequirementsJson())
+                : List.of();
+
+        Map<String, Object> gapResult = skillGapInternal(qaForAi, resumeSkills, resumeProjects, jdRequirements);
         List<String> weakAreas = (List<String>) gapResult.getOrDefault("weakAreas", List.of());
         List<String> strengths = (List<String>) gapResult.getOrDefault("strengths", List.of());
+        List<String> missingJdSkills = (List<String>) gapResult.getOrDefault("missingJdSkills", List.of());
         Double averageScore = ((Number) gapResult.getOrDefault("averageScore", 0.0)).doubleValue();
 
         SkillGapResult gapEntity = skillGapResultRepository.findBySession(session).orElseGet(SkillGapResult::new);
         gapEntity.setSession(session);
         gapEntity.setWeakAreasJson(jsonUtil.toJson(weakAreas));
         gapEntity.setStrengthsJson(jsonUtil.toJson(strengths));
+        gapEntity.setMissingJdSkillsJson(jsonUtil.toJson(missingJdSkills));
         gapEntity.setAverageScore(averageScore);
         skillGapResultRepository.save(gapEntity);
 
-        List<Map<String, Object>> planRaw = aiServiceClient.prepPlan(weakAreas, 5);
+        List<Map<String, Object>> planRaw = prepPlanInternal(weakAreas, 5);
         List<PrepDayDto> plan = planRaw.stream()
                 .map(p -> new PrepDayDto(
                         ((Number) p.get("day")).intValue(),
@@ -324,7 +345,19 @@ public class InterviewService {
         preparationPlanRepository.save(planEntity);
 
         double finalScore = session.getAverageScore() != null ? session.getAverageScore() : averageScore;
-        return new SessionReportResponse(session.getId(), qaHistory, new SkillGapDto(weakAreas, strengths, averageScore), plan, finalScore);
+        return new SessionReportResponse(session.getId(), qaHistory, new SkillGapDto(weakAreas, strengths, missingJdSkills, averageScore), plan, finalScore);
+    }
+
+    public SessionReportResponse finishSession(User user, Long sessionId) {
+        InterviewSession session = sessionRepository.findById(sessionId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found"));
+        if (!session.getUser().getId().equals(user.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "This session does not belong to you");
+        }
+        if (session.getStatus() != InterviewSession.Status.COMPLETED) {
+            finalizeSession(session);
+        }
+        return getReport(user, sessionId);
     }
 
     public CurrentQuestionResponse getCurrentQuestion(User user, Long sessionId) {
@@ -341,6 +374,42 @@ public class InterviewService {
         Optional<Question> unanswered = questions.stream()
                 .filter(q -> answerRepository.findByQuestion(q).isEmpty())
                 .findFirst();
+
+        if (unanswered.isEmpty()) {
+            long answeredCount = questions.stream().filter(q -> answerRepository.findByQuestion(q).isPresent()).count();
+            if (answeredCount >= 20) {
+                finalizeSession(session);
+                return new CurrentQuestionResponse(null, true);
+            }
+            List<String> askedTopics = questions.stream().map(Question::getTopic).collect(Collectors.toList());
+            List<String> skills = jsonUtil.toStringList(session.getResume().getExtractedSkillsJson());
+            List<String> projects = jsonUtil.toStringList(session.getResume().getExtractedProjectsJson());
+            List<String> requirements = session.getJobDescription() != null
+                    ? jsonUtil.toStringList(session.getJobDescription().getExtractedRequirementsJson())
+                    : List.of();
+
+            Question lastQ = !questions.isEmpty() ? questions.get(questions.size() - 1) : null;
+            Optional<Answer> lastA = lastQ != null ? answerRepository.findByQuestion(lastQ) : Optional.empty();
+
+            Map<String, Object> nextQ = generateAdaptiveQuestionInternal(
+                    skills, projects, requirements,
+                    lastQ != null ? lastQ.getText() : null,
+                    lastA.map(Answer::getAnswerText).orElse(""),
+                    lastQ != null ? lastQ.getTopic() : null,
+                    lastA.map(Answer::getOverallScore).orElse(70),
+                    lastQ != null ? lastQ.getDifficulty() : "medium",
+                    askedTopics, (int) answeredCount + 1);
+
+            Question next = new Question();
+            next.setSession(session);
+            next.setText((String) nextQ.get("text"));
+            next.setTopic((String) nextQ.get("topic"));
+            next.setDifficulty((String) nextQ.getOrDefault("difficulty", "medium"));
+            next.setOrderIndex(questions.size() + 1);
+            questionRepository.save(next);
+
+            return new CurrentQuestionResponse(new QuestionDto(next.getId(), next.getText(), next.getTopic(), next.getDifficulty()), false);
+        }
 
         return unanswered
                 .map(q -> new CurrentQuestionResponse(new QuestionDto(q.getId(), q.getText(), q.getTopic(), q.getDifficulty()), false))
@@ -464,5 +533,264 @@ public class InterviewService {
                 Math.round(avgEyeContact * 10.0) / 10.0,
                 Math.round(avgPosture * 10.0) / 10.0
         );
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> generateAdaptiveQuestionInternal(
+            List<String> skills, List<String> projects, List<String> requirements,
+            String previousQuestion, String previousAnswer, String previousTopic,
+            Integer previousScore, String currentDifficulty, List<String> askedTopics,
+            int roundNumber) {
+        if (geminiService.isConfigured()) {
+            try {
+                String targetDiff = currentDifficulty != null ? currentDifficulty : "medium";
+                if (previousScore != null) {
+                    if (previousScore >= 75) targetDiff = "hard";
+                    else if (previousScore < 60) targetDiff = "easy";
+                    else targetDiff = "medium";
+                }
+
+                String systemInstruction = "You are a Principal Software Engineering Interviewer. "
+                        + "Generate the next adaptive interview question. Calibrate to candidate skills, projects, and target role. "
+                        + "If candidate showed deep depth or a gap on the previous answer, probe with a follow-up. Otherwise pivot to an untested topic. "
+                        + "Return strictly valid JSON.";
+
+                String prompt = String.format("""
+                        CANDIDATE SKILLS: %s
+                        CANDIDATE PROJECTS: %s
+                        ROLE REQUIREMENTS: %s
+                        PREVIOUS TOPIC: %s
+                        PREVIOUS QUESTION: %s
+                        PREVIOUS ANSWER: %s
+                        PREVIOUS SCORE: %s/100
+                        ASKED TOPICS: %s
+                        ROUND NUMBER: %d
+                        TARGET DIFFICULTY: %s
+
+                        Return strictly JSON:
+                        {
+                          "text": "The technical interview question...",
+                          "topic": "Technology/Topic name",
+                          "difficulty": "%s"
+                        }
+                        """,
+                        skills, projects, requirements,
+                        previousTopic != null ? previousTopic : "N/A",
+                        previousQuestion != null ? previousQuestion : "N/A",
+                        previousAnswer != null ? previousAnswer : "N/A",
+                        previousScore != null ? previousScore : "N/A",
+                        askedTopics, roundNumber, targetDiff, targetDiff
+                );
+
+                String json = geminiService.generateJson(systemInstruction, prompt);
+                JsonNode root = objectMapper.readTree(json);
+                String text = root.hasNonNull("text") ? root.get("text").asText()
+                        : (root.hasNonNull("question") ? root.get("question").asText() : "");
+                String topic = root.hasNonNull("topic") ? root.get("topic").asText()
+                        : (!skills.isEmpty() ? skills.get(0) : "General");
+                String diff = root.hasNonNull("difficulty") ? root.get("difficulty").asText() : targetDiff;
+
+                if (!text.isBlank()) {
+                    return Map.of("text", text, "topic", topic, "difficulty", diff);
+                }
+            } catch (Exception e) {
+                log.warn("Gemini question generation fell back to AI service: {}", e.getMessage());
+            }
+        }
+        return aiServiceClient.generateAdaptiveQuestion(skills, projects, requirements,
+                previousQuestion, previousAnswer, previousTopic, previousScore, currentDifficulty, askedTopics, roundNumber);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> evaluateAnswerInternal(
+            String questionText, String topic, String difficulty, String answerText,
+            Map<String, Object> audioMetrics, Map<String, Object> visionMetrics) {
+        if (geminiService.isConfigured()) {
+            try {
+                String systemInstruction = "You are an expert Technical Interview Evaluator. "
+                        + "Evaluate the candidate's answer based on technical correctness, conceptual depth, relevance, communication clarity, and confidence. "
+                        + "Accept alternative phrasing. Do not award high marks to vague or generic answers. "
+                        + "Return strictly valid JSON.";
+
+                String prompt = String.format("""
+                        QUESTION (%s - %s difficulty):
+                        %s
+
+                        CANDIDATE ANSWER:
+                        %s
+
+                        Evaluate across 5 dimensions from 0 to 100:
+                        1. technicalKnowledge (0-100)
+                        2. relevance (0-100)
+                        3. communication (0-100)
+                        4. clarity (0-100)
+                        5. confidence (0-100)
+                        6. overallScore (0-100)
+
+                        Provide concise rationales for each dimension in 'reasons', and a one-sentence 'multimodalSummary'.
+
+                        Return strictly JSON:
+                        {
+                          "overallScore": 82,
+                          "scores": {
+                            "technicalKnowledge": 85,
+                            "relevance": 85,
+                            "communication": 80,
+                            "clarity": 80,
+                            "confidence": 80
+                          },
+                          "reasons": {
+                            "technicalKnowledge": "...",
+                            "relevance": "...",
+                            "communication": "...",
+                            "clarity": "...",
+                            "confidence": "..."
+                          },
+                          "multimodalSummary": "Demonstrated solid technical depth and clear cadence."
+                        }
+                        """,
+                        topic, difficulty, questionText, answerText
+                );
+
+                String json = geminiService.generateJson(systemInstruction, prompt);
+                JsonNode root = objectMapper.readTree(json);
+                int overall = root.hasNonNull("overallScore") ? root.get("overallScore").asInt() : 75;
+
+                Map<String, Object> scoresMap = new HashMap<>();
+                if (root.has("scores")) {
+                    JsonNode sNode = root.get("scores");
+                    scoresMap.put("technicalKnowledge", sNode.hasNonNull("technicalKnowledge") ? sNode.get("technicalKnowledge").asInt() : overall);
+                    scoresMap.put("relevance", sNode.hasNonNull("relevance") ? sNode.get("relevance").asInt() : overall);
+                    scoresMap.put("communication", sNode.hasNonNull("communication") ? sNode.get("communication").asInt() : overall);
+                    scoresMap.put("clarity", sNode.hasNonNull("clarity") ? sNode.get("clarity").asInt() : overall);
+                    scoresMap.put("confidence", sNode.hasNonNull("confidence") ? sNode.get("confidence").asInt() : overall);
+                } else {
+                    scoresMap.put("technicalKnowledge", overall);
+                    scoresMap.put("relevance", overall);
+                    scoresMap.put("communication", overall);
+                    scoresMap.put("clarity", overall);
+                    scoresMap.put("confidence", overall);
+                }
+
+                Map<String, String> reasonsMap = new HashMap<>();
+                if (root.has("reasons")) {
+                    root.get("reasons").fields().forEachRemaining(entry -> reasonsMap.put(entry.getKey(), entry.getValue().asText()));
+                } else {
+                    reasonsMap.put("technicalKnowledge", "Evaluated technical depth.");
+                }
+
+                String summary = root.hasNonNull("multimodalSummary")
+                        ? root.get("multimodalSummary").asText()
+                        : "Demonstrated technical understanding with structured delivery.";
+
+                Map<String, Object> out = new HashMap<>();
+                out.put("overallScore", overall);
+                out.put("scores", scoresMap);
+                out.put("reasons", reasonsMap);
+                out.put("multimodalSummary", summary);
+                out.put("audioMetrics", audioMetrics);
+                out.put("visionMetrics", visionMetrics);
+                return out;
+            } catch (Exception e) {
+                log.warn("Gemini answer evaluation fell back to AI service: {}", e.getMessage());
+            }
+        }
+        return aiServiceClient.evaluateAnswer(questionText, topic, difficulty, answerText, audioMetrics, visionMetrics);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> skillGapInternal(
+            List<Map<String, Object>> qaForAi, List<String> resumeSkills, List<String> resumeProjects, List<String> jdRequirements) {
+        if (geminiService.isConfigured()) {
+            try {
+                String systemInstruction = "You are a Senior Technical Recruiter conducting an explainable Skill-Gap Analysis. "
+                        + "Compare the candidate's resume and interview performance against target job description requirements. "
+                        + "Extract weakAreas, strengths, missingJdSkills, and averageScore. Return strictly valid JSON.";
+
+                String prompt = String.format("""
+                        RESUME SKILLS: %s
+                        RESUME PROJECTS: %s
+                        JOB REQUIREMENTS: %s
+                        INTERVIEW ROUNDS: %s
+
+                        Return strictly JSON:
+                        {
+                          "weakAreas": ["..."],
+                          "strengths": ["..."],
+                          "missingJdSkills": ["..."],
+                          "averageScore": 75.0
+                        }
+                        """,
+                        resumeSkills, resumeProjects, jdRequirements, jsonUtil.toJson(qaForAi)
+                );
+
+                String json = geminiService.generateJson(systemInstruction, prompt);
+                JsonNode root = objectMapper.readTree(json);
+                List<String> weak = new ArrayList<>();
+                List<String> str = new ArrayList<>();
+                List<String> missing = new ArrayList<>();
+                if (root.has("weakAreas") && root.get("weakAreas").isArray()) {
+                    for (JsonNode n : root.get("weakAreas")) if (n.isTextual()) weak.add(n.asText());
+                }
+                if (root.has("strengths") && root.get("strengths").isArray()) {
+                    for (JsonNode n : root.get("strengths")) if (n.isTextual()) str.add(n.asText());
+                }
+                if (root.has("missingJdSkills") && root.get("missingJdSkills").isArray()) {
+                    for (JsonNode n : root.get("missingJdSkills")) if (n.isTextual()) missing.add(n.asText());
+                }
+                double avg = root.hasNonNull("averageScore") ? root.get("averageScore").asDouble() : 75.0;
+
+                return Map.of("weakAreas", weak, "strengths", str, "missingJdSkills", missing, "averageScore", avg);
+            } catch (Exception e) {
+                log.warn("Gemini skill-gap fell back to AI service: {}", e.getMessage());
+            }
+        }
+        return aiServiceClient.skillGap(qaForAi, resumeSkills, resumeProjects, jdRequirements);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> prepPlanInternal(List<String> weakAreas, int days) {
+        if (geminiService.isConfigured()) {
+            try {
+                String systemInstruction = "You are a Technical Interview Coach. Create a personalized day-by-day preparation plan for the candidate's weak areas. Return strictly valid JSON.";
+                String prompt = String.format("""
+                        WEAK AREAS TO TARGET: %s
+                        NUMBER OF DAYS: %d
+
+                        Return strictly JSON:
+                        {
+                          "plan": [
+                            {
+                              "day": 1,
+                              "focus": "...",
+                              "tasks": ["...", "..."]
+                            }
+                          ]
+                        }
+                        """,
+                        weakAreas, days
+                );
+
+                String json = geminiService.generateJson(systemInstruction, prompt);
+                JsonNode root = objectMapper.readTree(json);
+                JsonNode planNode = root.has("plan") ? root.get("plan") : root;
+                List<Map<String, Object>> plan = new ArrayList<>();
+                if (planNode.isArray()) {
+                    for (JsonNode n : planNode) {
+                        int day = n.hasNonNull("day") ? n.get("day").asInt() : 1;
+                        String focus = n.hasNonNull("focus") ? n.get("focus").asText() : "Targeted Drill";
+                        List<String> tasks = new ArrayList<>();
+                        if (n.has("tasks") && n.get("tasks").isArray()) {
+                            for (JsonNode t : n.get("tasks")) if (t.isTextual()) tasks.add(t.asText());
+                        }
+                        plan.add(Map.of("day", day, "focus", focus, "tasks", tasks));
+                    }
+                    if (!plan.isEmpty()) return plan;
+                }
+            } catch (Exception e) {
+                log.warn("Gemini prep-plan fell back to AI service: {}", e.getMessage());
+            }
+        }
+        return aiServiceClient.prepPlan(weakAreas, days);
     }
 }

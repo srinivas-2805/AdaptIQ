@@ -69,17 +69,6 @@ export default function Navbar() {
           </svg>
           New Interview
         </Link>
-
-        <Link
-          to="/coding"
-          className={location.pathname.startsWith("/coding") ? "active" : ""}
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="16 18 22 12 16 6"></polyline>
-            <polyline points="8 6 2 12 8 18"></polyline>
-          </svg>
-          Coding Sandbox
-        </Link>
       </nav>
 
       <div className="navbar-right">

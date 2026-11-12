@@ -48,9 +48,6 @@ export default function Report() {
           <p className="muted">Session #{sessionId} • Comprehensive performance breakdown & explainable feedback</p>
         </div>
         <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-          <Link to="/coding" className="btn-secondary" style={{ textDecoration: "none", padding: "10px 16px", background: "#f0fdf4", color: "#166534", border: "1px solid #86efac", fontWeight: "600" }}>
-            💻 Coding Round
-          </Link>
           <Link to="/dashboard" className="btn-secondary" style={{ textDecoration: "none", padding: "10px 16px" }}>
             📊 Progress Dashboard
           </Link>
@@ -97,7 +94,7 @@ export default function Report() {
           <h3 style={{ margin: 0 }}>Skill-Gap & Strengths Analysis</h3>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: report.skillGap.missingJdSkills?.length ? "1fr 1fr 1fr" : "1fr 1fr", gap: "20px" }}>
           <div>
             <h4 style={{ color: "#b91c1c", margin: "0 0 8px", fontSize: "14px" }}>Areas for Improvement (Skill Gaps)</h4>
             {report.skillGap.weakAreas.length > 0 ? (
@@ -112,6 +109,19 @@ export default function Report() {
               <p className="muted" style={{ fontSize: "13px" }}>No critical skill gaps detected. You performed solidly!</p>
             )}
           </div>
+
+          {report.skillGap.missingJdSkills && report.skillGap.missingJdSkills.length > 0 && (
+            <div>
+              <h4 style={{ color: "#d97706", margin: "0 0 8px", fontSize: "14px" }}>Missing Target JD Skills</h4>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                {report.skillGap.missingJdSkills.map((m, idx) => (
+                  <span key={idx} className="badge" style={{ background: "#fef3c7", color: "#92400e", padding: "6px 12px" }}>
+                    📋 {m}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div>
             <h4 style={{ color: "#15803d", margin: "0 0 8px", fontSize: "14px" }}>Demonstrated Core Strengths</h4>
@@ -263,9 +273,6 @@ export default function Report() {
       <div style={{ textAlign: "center", margin: "32px 0", display: "flex", justifyContent: "center", gap: "16px", flexWrap: "wrap" }}>
         <Link to="/upload" style={{ textDecoration: "none", padding: "14px 28px", background: "#2563eb", color: "white", borderRadius: "8px", fontWeight: "700", fontSize: "15px" }}>
           🚀 Start Another Mock Interview
-        </Link>
-        <Link to="/coding" style={{ textDecoration: "none", padding: "14px 28px", background: "#16a34a", color: "white", borderRadius: "8px", fontWeight: "700", fontSize: "15px" }}>
-          💻 Practice Technical Coding Sandbox Round →
         </Link>
       </div>
     </div>

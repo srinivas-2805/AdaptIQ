@@ -81,6 +81,28 @@ class NextQuestionRequest(BaseModel):
     skills: List[str] = []
 
 
+class AdaptiveQuestionRequest(BaseModel):
+    skills: List[str] = []
+    projects: List[str] = []
+    requirements: List[str] = []
+    previousQuestion: Optional[str] = None
+    previousAnswer: Optional[str] = None
+    previousTopic: Optional[str] = None
+    previousScore: Optional[int] = None
+    currentDifficulty: Optional[str] = "medium"
+    askedTopics: List[str] = []
+    roundNumber: int = 1
+
+
+class AdaptiveQuestionResponse(BaseModel):
+    id: str
+    text: str
+    topic: str
+    difficulty: str
+    rationale: Optional[str] = None
+    isFollowUp: bool = False
+
+
 class FollowUpRequest(BaseModel):
     previousQuestion: str
     previousAnswer: str
@@ -99,12 +121,16 @@ class QAItem(BaseModel):
 
 
 class SkillGapRequest(BaseModel):
-    qaHistory: List[QAItem]
+    qaHistory: List[QAItem] = []
+    resumeSkills: List[str] = []
+    resumeProjects: List[str] = []
+    jdRequirements: List[str] = []
 
 
 class SkillGapResponse(BaseModel):
     weakAreas: List[str]
     strengths: List[str]
+    missingJdSkills: List[str] = []
     averageScore: float
     recommendations: Optional[List[str]] = None
 

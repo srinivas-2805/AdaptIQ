@@ -65,14 +65,7 @@ export default function App() {
               </ProtectedRoute>
             }
           />
-          <Route
-            path="/coding"
-            element={
-              <ProtectedRoute>
-                <CodingRound />
-              </ProtectedRoute>
-            }
-          />
+          {/* Coding round temporarily disabled per request */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

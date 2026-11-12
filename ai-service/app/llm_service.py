@@ -379,100 +379,315 @@ def evaluate_answer(
     }
 
 
-# --------------------------------------------------------- 4. FOLLOW-UPS ---
-def generate_followup(previous_question: str, previous_answer: str, topic: str) -> str:
-    """Generates context-aware follow-up question digging deeper into previous response."""
+# --------------------------------------------------------- 4. ADAPTIVE QUESTIONS & FOLLOW-UPS ---
+def generate_adaptive_question(
+    skills: List[str],
+    projects: Optional[List[str]] = None,
+    requirements: Optional[List[str]] = None,
+    previous_question: Optional[str] = None,
+    previous_answer: Optional[str] = None,
+    previous_topic: Optional[str] = None,
+    previous_score: Optional[int] = None,
+    current_difficulty: str = "medium",
+    asked_topics: Optional[List[str]] = None,
+    round_number: int = 1
+) -> Dict[str, Any]:
+    """
+    Dynamically generates the next interview question tailored to:
+    - Candidate resume skills and projects
+    - Target JD requirements (if provided)
+    - Depth, correctness, and weaknesses of candidate's previous response
+    - Cognitive difficulty shift (easy -> medium -> hard)
+    - Intelligent drill-down vs. cross-domain pivot
+    """
+    skills = skills or ["Software Engineering"]
+    projects = projects or []
+    requirements = requirements or []
+    asked_topics = asked_topics or []
+
+    # Calculate adaptive target difficulty
+    if previous_score is not None:
+        target_diff = _difficulty_shift(previous_score, current_difficulty)
+    else:
+        target_diff = current_difficulty
+
+    # Determine all candidate topics, prioritizing JD requirements followed by resume skills
+    pool_topics = []
+    for r in requirements:
+        if r and r not in pool_topics:
+            pool_topics.append(r)
+    for s in skills:
+        if s and s not in pool_topics:
+            pool_topics.append(s)
+    if not pool_topics:
+        pool_topics = ["System Architecture", "API Design", "Data Structures"]
+
+    # Decision: Follow-up drill-down vs. Pivot
+    is_follow_up = False
+    target_topic = pool_topics[0]
+
+    if previous_question and previous_answer and previous_topic:
+        times_asked = asked_topics.count(previous_topic)
+        # If candidate mentioned concrete technical mechanisms or showed a gap (<65) on previous topic
+        # and has only answered 1 question on it, probe deeper with a targeted follow-up!
+        if times_asked <= 1 and (previous_score is not None and (previous_score < 65 or len(previous_answer) > 120)):
+            is_follow_up = True
+            target_topic = previous_topic
+        else:
+            # Pivot to next unasked topic from requirements or skills
+            unasked = [t for t in pool_topics if t not in asked_topics]
+            if unasked:
+                target_topic = unasked[0]
+            else:
+                # If all covered, cycle to the topic where candidate had the lowest score
+                target_topic = pool_topics[(round_number - 1) % len(pool_topics)]
+    else:
+        # First question of the interview
+        target_topic = pool_topics[0]
+
+    # --- Live GPT-4o Generation ---
     if _client is not None:
+        mode_desc = (
+            f"DEEP-DIVE FOLLOW UP: The candidate previously answered: '{previous_answer}'. "
+            "Challenge a specific claim, explore failure modes/edge cases, or demand trade-off analysis."
+            if is_follow_up else
+            f"PIVOT TO TOPIC: Ask a fresh, high-signal scenario question about {target_topic}."
+        )
         prompt = (
-            f"Interviewer asked: {previous_question}\n"
-            f"Candidate answered: {previous_answer}\n"
-            f"Topic: {topic}\n\n"
-            "Ask ONE context-aware technical follow-up question that challenges a specific claim, "
-            "asks about an edge case, or explores scalability trade-offs based on their answer.\n"
-            'Return ONLY JSON: {"followUpQuestion": "..."}'
+            f"You are conducting a high-signal technical mock interview.\n"
+            f"Candidate Skills: {skills}\n"
+            f"Candidate Projects: {projects}\n"
+            f"Target Role Requirements: {requirements}\n\n"
+            f"INTERVIEW CONTEXT:\n"
+            f"- Round Number: {round_number}\n"
+            f"- Topics Already Asked: {asked_topics}\n"
+            f"- Previous Question: {previous_question or 'N/A'}\n"
+            f"- Candidate Previous Answer: {previous_answer or 'N/A'}\n"
+            f"- Previous Score: {previous_score if previous_score is not None else 'N/A'}/100\n"
+            f"- Next Target Topic: {target_topic}\n"
+            f"- Target Difficulty: {target_diff}\n"
+            f"- Mode: {mode_desc}\n\n"
+            "Generate ONE crisp, professional technical question tailored specifically to their experience.\n"
+            'Return ONLY JSON: {"text": "...", "topic": "' + target_topic + '", "difficulty": "' + target_diff + '", "isFollowUp": ' + str(is_follow_up).lower() + ', "rationale": "..."}'
         )
         try:
-            data = _chat_json("You are an insightful technical interviewer digging deeper.", prompt)
-            return data.get("followUpQuestion", f"Can you elaborate on how that approach scales in {topic}?")
+            parsed = _chat_json("You are a Principal Software Engineer and Technical Interviewer.", prompt)
+            return {
+                "id": str(uuid.uuid4()),
+                "text": parsed.get("text", f"Can you walk me through your technical experience with {target_topic}?"),
+                "topic": parsed.get("topic", target_topic),
+                "difficulty": parsed.get("difficulty", target_diff),
+                "isFollowUp": parsed.get("isFollowUp", is_follow_up),
+                "rationale": parsed.get("rationale", f"Testing {target_diff} competency in {target_topic}")
+            }
         except Exception:
             pass
 
-    # Dynamic contextual hooks based on answer content
-    lower = previous_answer.lower()
-    if "database" in lower or "sql" in lower or "cache" in lower:
-        return f"Regarding your point about data management in {topic}, how would you prevent data inconsistency under concurrent writes?"
-    elif "api" in lower or "microservice" in lower or "service" in lower:
-        return f"When building that service with {topic}, how did you handle timeout propagation and circuit breaking when downstream dependencies fail?"
-    elif "test" in lower or "error" in lower or "bug" in lower:
-        return f"How do you design automated integration tests to catch edge cases before deploying {topic} changes to production?"
-    elif len(previous_answer) > 100:
-        return f"You mentioned key architectural decisions with {topic}. What was the biggest trade-off you had to accept, and how would you redesign it today?"
+    # --- High-Fidelity Heuristic Generation (Mock Mode) ---
+    q_text = ""
+    rationale = ""
+    if is_follow_up:
+        lower_ans = (previous_answer or "").lower()
+        if any(k in lower_ans for k in ["database", "sql", "cache", "redis", "query", "index", "table"]):
+            q_text = f"In your response regarding {target_topic}, you mentioned data access. Under high concurrent write spikes, how would you prevent race conditions, cache inconsistency, and database locking?"
+            rationale = f"Probing data layer concurrency depth in {target_topic}"
+        elif any(k in lower_ans for k in ["api", "microservice", "service", "rest", "endpoint", "grpc"]):
+            q_text = f"Expanding on the {target_topic} architecture you described: how do you implement timeout budgets, circuit breaking, and dead-letter queues when downstream services experience outage?"
+            rationale = f"Evaluating fault tolerance and distributed resilience in {target_topic}"
+        elif any(k in lower_ans for k in ["test", "bug", "latency", "memory", "leak", "bottleneck"]):
+            q_text = f"You touched on reliability with {target_topic}. How would you systematically diagnose and resolve a 99th-percentile tail latency spike in production without restarting the service?"
+            rationale = f"Testing operational diagnostics and performance profiling in {target_topic}"
+        else:
+            q_text = f"You discussed your approach to {target_topic}. What is the most critical trade-off you had to make in that design, and under what conditions would you re-architect it?"
+            rationale = f"Challenging architectural trade-offs in {target_topic}"
     else:
-        return f"Could you dive deeper into a real-world scenario where you had to debug an unexpected issue with {topic}?"
+        # Pivot or Opening question based on target_diff
+        if target_diff == "hard":
+            hard_templates = [
+                "Imagine a mission-critical service built with {topic} experiences a 10x traffic spike causing CPU throttling and thread pool exhaustion. Walk me through your step-by-step triage and mitigation strategy.",
+                "How would you architect a distributed, fault-tolerant system using {topic} that ensures zero-downtime rolling deployments and seamless database schema migrations?",
+                "What are the hardest edge cases and data consistency challenges you have resolved when designing systems with {topic} at scale?"
+            ]
+            q_text = hard_templates[(round_number - 1) % len(hard_templates)].format(topic=target_topic)
+            rationale = f"Assessing advanced system design and disaster mitigation in {target_topic}"
+        elif target_diff == "easy":
+            easy_templates = [
+                "What are the foundational architectural principles of {topic}, and how do they impact code maintainability and testability?",
+                "How would you explain the core lifecycle, data flow, and separation of concerns in {topic} to a junior engineer?",
+                "What are common pitfalls or anti-patterns developers encounter when starting with {topic}, and how do you avoid them?"
+            ]
+            q_text = easy_templates[(round_number - 1) % len(easy_templates)].format(topic=target_topic)
+            rationale = f"Evaluating core conceptual foundations in {target_topic}"
+        else:
+            med_templates = [
+                "In your experience with {topic}, walk me through how you designed a core feature or resolved a complex performance bottleneck in production.",
+                "How do you approach automated testing, error boundaries, and security hardening when building production services with {topic}?",
+                "What major architectural trade-offs or constraints have you encountered while using {topic}, and what alternatives did you consider?"
+            ]
+            q_text = med_templates[(round_number - 1) % len(med_templates)].format(topic=target_topic)
+            rationale = f"Testing real-world implementation depth and trade-offs in {target_topic}"
+
+    return {
+        "id": str(uuid.uuid4()),
+        "text": q_text,
+        "topic": target_topic,
+        "difficulty": target_diff,
+        "isFollowUp": is_follow_up,
+        "rationale": rationale
+    }
+
+
+def generate_followup(previous_question: str, previous_answer: str, topic: str) -> str:
+    """Generates context-aware follow-up question digging deeper into previous response."""
+    res = generate_adaptive_question(
+        skills=[topic],
+        previous_question=previous_question,
+        previous_answer=previous_answer,
+        previous_topic=topic,
+        previous_score=60,
+        asked_topics=[topic]
+    )
+    return res["text"]
 
 
 # --------------------------------------------------------- 5. SKILL GAP ---
-def skill_gap(qa_history: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Analyzes candidate performance history to identify strengths and skill gaps."""
-    if not qa_history:
-        return {
-            "weakAreas": ["System Architecture", "Concurrency & Thread Safety"],
-            "strengths": ["Web Fundamentals", "Communication"],
-            "averageScore": 70.0,
-            "recommendations": ["Review distributed systems concepts and database query optimization."]
-        }
+def skill_gap(
+    qa_history: List[Dict[str, Any]],
+    resume_skills: Optional[List[str]] = None,
+    resume_projects: Optional[List[str]] = None,
+    jd_requirements: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """
+    Analyzes candidate performance history AND compares resume skills against
+    target Job Description (JD) requirements to identify:
+    - Missing JD requirements (skills required by employer but absent from resume)
+    - Interview performance gaps (topics scored below threshold in practice)
+    - Demonstrated strengths (high-scoring topics and verified project competencies)
+    """
+    resume_skills = resume_skills or []
+    resume_projects = resume_projects or []
+    jd_requirements = jd_requirements or []
 
+    # 1. Compare Resume Skills against Target JD Requirements
+    norm_resume = {s.lower().strip() for s in resume_skills}
+    missing_jd = []
+    for req in jd_requirements:
+        req_clean = req.strip()
+        req_lower = req_clean.lower()
+        # Check if requirement or any sub-word exists in resume skills
+        if req_lower not in norm_resume and not any(r in req_lower or req_lower in r for r in norm_resume):
+            if req_clean not in missing_jd:
+                missing_jd.append(req_clean)
+
+    # 2. Analyze Interview Performance by Topic
     by_topic = {}
     for item in qa_history:
         topic = item.get("topic", "General")
         by_topic.setdefault(topic, []).append(item.get("overallScore", 70))
 
-    weak, strong = [], []
+    interview_weak = []
+    interview_strengths = []
     for topic, scores in by_topic.items():
         avg = sum(scores) / len(scores)
         if avg < 65:
-            weak.append(topic)
-        else:
-            strong.append(topic)
+            interview_weak.append(topic)
+        elif avg >= 70:
+            interview_strengths.append(topic)
 
-    if not weak and strong:
-        # If all scores were good, suggest advanced optimization of lowest topic
+    # If candidate had good scores, suggest advanced optimization for lowest topic
+    if not interview_weak and by_topic:
         sorted_topics = sorted(by_topic.keys(), key=lambda t: sum(by_topic[t]) / len(by_topic[t]))
-        weak.append(f"Advanced {sorted_topics[0]} Optimization")
+        interview_weak.append(f"Advanced {sorted_topics[0]} Optimization")
 
-    avg_all = sum(i.get("overallScore", 0) for i in qa_history) / max(len(qa_history), 1)
+    # Combine weak areas: Interview gaps + Missing JD requirements
+    combined_weak = list(interview_weak)
+    for m in missing_jd:
+        label = f"{m} (Missing from Target JD)"
+        if label not in combined_weak:
+            combined_weak.append(label)
 
-    recommendations = [
-        f"Focus deep study on: {', '.join(weak[:3])}.",
-        "Practice speaking with concise STAR structuring (Situation, Task, Action, Result).",
-        "Maintain direct camera eye contact to reinforce confidence when explaining trade-offs."
-    ]
+    # Strengths: topics candidate scored high on
+    combined_strengths = list(interview_strengths)
+    if not combined_strengths and resume_skills:
+        combined_strengths = resume_skills[:3]
+
+    avg_all = sum(i.get("overallScore", 70) for i in qa_history) / max(len(qa_history), 1)
+
+    # --- Live GPT-4o Skill Gap Analysis ---
+    if _client is not None:
+        prompt = (
+            "You are a Senior Technical Recruiter and Hiring Manager conducting a Skill-Gap Analysis.\n\n"
+            f"Candidate Resume Skills: {resume_skills}\n"
+            f"Candidate Projects: {resume_projects}\n"
+            f"Target Role Requirements: {jd_requirements}\n"
+            f"Missing JD Skills: {missing_jd}\n"
+            f"Interview Rounds Q&A Performance: {qa_history}\n\n"
+            "Provide an actionable, explainable skill-gap evaluation:\n"
+            "- weakAreas: concrete list of technical gaps observed in interview or missing from JD\n"
+            "- strengths: demonstrated competencies and verified strong topics\n"
+            "- missingJdSkills: target role requirements not evidenced in resume\n"
+            "- recommendations: 3 specific, high-impact recommendations to bridge the gap\n"
+            'Return ONLY JSON: {"weakAreas": ["..."], "strengths": ["..."], "missingJdSkills": ["..."], "recommendations": ["..."]}'
+        )
+        try:
+            parsed = _chat_json("You are an expert technical hiring manager.", prompt)
+            return {
+                "weakAreas": parsed.get("weakAreas", combined_weak),
+                "strengths": parsed.get("strengths", combined_strengths),
+                "missingJdSkills": parsed.get("missingJdSkills", missing_jd),
+                "averageScore": round(avg_all, 1),
+                "recommendations": parsed.get("recommendations", [
+                    f"Bridge target JD gap: Build a dedicated project incorporating {', '.join(missing_jd[:2]) if missing_jd else 'advanced architecture'}.",
+                    f"Strengthen interview performance in: {', '.join(interview_weak[:2]) if interview_weak else 'system scale'}.",
+                    "Practice structured STAR explanations focusing on measurable latency, scale, and uptime outcomes."
+                ])
+            }
+        except Exception:
+            pass
+
+    # Heuristic recommendations
+    recs = []
+    if missing_jd:
+        recs.append(f"Target Role Gap: The target JD emphasizes {', '.join(missing_jd[:3])}. Add hands-on project examples or certifications demonstrating proficiency in these areas.")
+    if interview_weak:
+        recs.append(f"Technical Interview Focus: Deepen conceptual depth and trade-off explanations in {', '.join(interview_weak[:2])}.")
+    recs.append("Delivery & Structure: Structure verbal responses sequentially (Problem Context → Technical Decision → Measurable Result).")
 
     return {
-        "weakAreas": weak,
-        "strengths": strong,
+        "weakAreas": combined_weak,
+        "strengths": combined_strengths,
+        "missingJdSkills": missing_jd,
         "averageScore": round(avg_all, 1),
-        "recommendations": recommendations
+        "recommendations": recs
     }
 
 
 # --------------------------------------------------------- 6. PREP PLAN ---
 def prep_plan(weak_areas: List[str], days: int = 5) -> List[Dict[str, Any]]:
-    """Generates a day-wise personalized preparation plan targeting weak skill areas."""
+    """Generates a day-wise personalized preparation plan targeting weak skill areas and missing JD skills."""
     if not weak_areas:
-        weak_areas = ["System Design & Architecture", "Database Query Optimization", "Concurrency & Thread Safety"]
+        weak_areas = ["System Design & Architecture", "Database Concurrency & Caching", "API Resilience & Error Handling"]
+
+    # Clean display names (remove annotations like "(Missing from Target JD)")
+    clean_topics = []
+    for w in weak_areas:
+        clean = re.sub(r"\s*\(.*?\)\s*", "", w).strip()
+        if clean and clean not in clean_topics:
+            clean_topics.append(clean)
+    if not clean_topics:
+        clean_topics = weak_areas
 
     plan = []
     for d in range(1, days + 1):
-        topic = weak_areas[(d - 1) % len(weak_areas)]
+        topic = clean_topics[(d - 1) % len(clean_topics)]
         plan.append({
             "day": d,
             "focus": f"Mastering {topic}",
             "tasks": [
-                f"Core Study: Review {topic} architectural patterns, official documentation, and best practices (45 min).",
-                f"Hands-On Implementation: Build a self-contained code example demonstrating {topic} concurrency or error handling (40 min).",
-                f"Mock Verbal Drill: Record a 3-minute explanation of {topic} trade-offs, aiming for 130-150 WPM and zero filler words (15 min).",
-                f"Review & Self-Evaluation: Check solution against production design guidelines and refine your explanation."
+                f"Core Deep-Dive: Study {topic} production architecture, design patterns, and official documentation (45 min).",
+                f"Hands-On Implementation: Build a working code example demonstrating {topic} concurrency, error boundaries, or caching (45 min).",
+                f"Verbal Technical Drill: Practice a 3-minute explanation of {topic} architectural trade-offs, aiming for 130-150 WPM and direct eye contact (15 min).",
+                f"Production Self-Check: Verify your solution against high-availability and security best practices."
             ]
         })
     return plan

@@ -226,14 +226,14 @@ export default function Upload() {
             color: activeTab === "upload" ? "white" : "#374151"
           }}
         >
-          Upload Resume File (PDF / TXT)
+          Upload Resume File (PDF / DOCX / TXT)
         </button>
       </div>
 
       <form onSubmit={handleUploadAndStart} className="card">
         {activeTab === "upload" ? (
           <div>
-            <label>Upload Resume File (.pdf or .txt)</label>
+            <label>Upload Resume File (.pdf, .docx, or .txt)</label>
             <div
               style={{
                 border: "2px dashed #93c5fd",
@@ -249,7 +249,7 @@ export default function Upload() {
               <input
                 id="file-input"
                 type="file"
-                accept=".pdf,.txt"
+                accept=".pdf,.docx,.txt"
                 onChange={handleFileChange}
                 style={{ display: "none" }}
               />
@@ -262,7 +262,7 @@ export default function Upload() {
               ) : (
                 <div>
                   <strong>Click or Drag & Drop your resume here</strong>
-                  <p className="muted" style={{ margin: "4px 0 0", fontSize: "13px" }}>Supports PDF or plain text</p>
+                  <p className="muted" style={{ margin: "4px 0 0", fontSize: "13px" }}>Supports PDF, DOCX, or plain text</p>
                 </div>
               )}
             </div>
@@ -289,12 +289,17 @@ export default function Upload() {
         />
 
         <div style={{ marginTop: "16px" }}>
-          <label>Number of Interview Rounds</label>
+          <label>Interview Mode & Planned Rounds</label>
           <select value={questionCount} onChange={(e) => setQuestionCount(e.target.value)}>
-            <option value={3}>3 Questions (Quick Practice)</option>
-            <option value={5}>5 Questions (Standard Mock Interview)</option>
-            <option value={8}>8 Questions (In-Depth Technical Simulation)</option>
+            <option value={5}>Adaptive Dynamic Mode (Recommended ~5-8 rounds or conclude anytime)</option>
+            <option value={3}>3 Rounds (Quick Practice)</option>
+            <option value={8}>8 Rounds (In-Depth Technical Simulation)</option>
+            <option value={12}>12 Rounds (Comprehensive Full-Loop Simulation)</option>
+            <option value={20}>Open Dynamic Practice (Up to 20 Rounds)</option>
           </select>
+          <small className="muted" style={{ display: "block", marginTop: "6px", fontSize: "12px", color: "#64748b" }}>
+            💡 Questions are dynamically generated one-by-one adapting to your answers and profile. You can also finish anytime during the interview to generate your report.
+          </small>
         </div>
 
         {error && <div className="error-banner" style={{ marginTop: "16px" }}>{error}</div>}

@@ -354,7 +354,7 @@ export default function Interview() {
     }
   }
 
-  async function handleSubmit(e) {
+  async function handleSubmit(e, finishEarly = false) {
     if (e) e.preventDefault();
     if (!answerText.trim()) return;
 
@@ -397,14 +397,15 @@ export default function Interview() {
         questionId: question.id,
         answerText,
         audioMetrics,
-        visionMetrics
+        visionMetrics,
+        finishSession: finishEarly
       });
 
       setLastEvaluation(data.evaluation);
       setRoundNumber((r) => r + 1);
       setAnswerText("");
 
-      if (data.sessionComplete) {
+      if (data.sessionComplete || finishEarly) {
         setTimeout(() => navigate(`/report/${sessionId}`), 1800);
       } else {
         setQuestion(data.followUpQuestion);
@@ -412,6 +413,25 @@ export default function Interview() {
     } catch (err) {
       setError(err.response?.data?.message || err.message || "Failed to evaluate answer");
     } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleFinishInterview() {
+    if (roundNumber <= 1 && !lastEvaluation) {
+      if (!window.confirm("You have not answered any questions yet. Do you still want to finish this session?")) {
+        return;
+      }
+    } else if (!window.confirm("Conclude this interview session now and generate your complete skill-gap report and preparation plan?")) {
+      return;
+    }
+    setSubmitting(true);
+    setError("");
+    try {
+      await api.post(`/interviews/${sessionId}/finish`);
+      navigate(`/report/${sessionId}`);
+    } catch (err) {
+      setError(err.response?.data?.message || err.message || "Failed to finish interview session");
       setSubmitting(false);
     }
   }
@@ -445,6 +465,23 @@ export default function Interview() {
             style={{ padding: "6px 12px", fontSize: "13px" }}
           >
             🔊 {aiSpeaking ? "Speaking..." : "Replay Question"}
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={handleFinishInterview}
+            disabled={submitting}
+            style={{
+              padding: "6px 14px",
+              fontSize: "13px",
+              background: "#fef2f2",
+              color: "#991b1b",
+              border: "1px solid #fecaca",
+              fontWeight: "600"
+            }}
+            title="Conclude interview early and generate full Skill-Gap Report"
+          >
+            🏁 Conclude Interview
           </button>
         </div>
       </div>
@@ -578,18 +615,31 @@ export default function Interview() {
           required
         />
 
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "12px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "12px", flexWrap: "wrap", gap: "10px" }}>
           <span className="muted" style={{ fontSize: "13px" }}>
             {isRecording ? "🎙️ Transcribing speech in real-time... Speak naturally!" : "Tip: Address the problem context, technical implementation, and architectural trade-offs."}
           </span>
-          <button
-            type="button"
-            disabled={submitting || !answerText.trim()}
-            onClick={handleSubmit}
-            style={{ padding: "10px 24px", fontSize: "15px" }}
-          >
-            {submitting ? "Evaluating Multimodally..." : "Submit Answer & Proceed →"}
-          </button>
+          <div style={{ display: "flex", gap: "10px" }}>
+            {roundNumber >= 2 && (
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={submitting || !answerText.trim()}
+                onClick={(e) => handleSubmit(e, true)}
+                style={{ padding: "10px 16px", fontSize: "14px", border: "1px solid #cbd5e1" }}
+              >
+                Submit & Conclude Interview
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={submitting || !answerText.trim()}
+              onClick={(e) => handleSubmit(e, false)}
+              style={{ padding: "10px 24px", fontSize: "15px" }}
+            >
+              {submitting ? "Evaluating Multimodally..." : "Submit Answer & Proceed →"}
+            </button>
+          </div>
         </div>
       </div>
 

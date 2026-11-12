@@ -4,6 +4,8 @@ import com.adaptiq.backend.dto.AuthDtos.*;
 import com.adaptiq.backend.model.User;
 import com.adaptiq.backend.repository.UserRepository;
 import com.adaptiq.backend.security.JwtUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -20,6 +22,8 @@ import java.util.*;
 
 @Service
 public class AuthService {
+
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -198,6 +202,7 @@ public class AuthService {
                         : "Google Candidate";
             }
         } else if ("github".equals(prov)) {
+            String githubErrorDetail = null;
             // Check if GitHub code exchange or token verification is applicable
             if (request.code() != null && !request.code().isBlank() && githubClientId != null && !githubClientId.isBlank() && githubClientSecret != null && !githubClientSecret.isBlank()) {
                 try {
@@ -213,6 +218,7 @@ public class AuthService {
 
                     HttpEntity<Map<String, String>> entity = new HttpEntity<>(body, headers);
                     Map tokenResp = restTemplate.postForObject("https://github.com/login/oauth/access_token", entity, Map.class);
+                    log.info("GitHub access_token response keys: {}", tokenResp != null ? tokenResp.keySet() : "null");
                     if (tokenResp != null && tokenResp.containsKey("access_token")) {
                         String ghToken = (String) tokenResp.get("access_token");
                         HttpHeaders userHeaders = new HttpHeaders();
@@ -249,16 +255,30 @@ public class AuthService {
                                         }
                                     }
                                 }
-                            } catch (Exception ignored) {
+                            } catch (Exception e) {
+                                log.warn("Could not fetch private emails from GitHub: {}", e.getMessage());
                             }
                         }
+                    } else if (tokenResp != null && tokenResp.containsKey("error")) {
+                        githubErrorDetail = String.format("%s (%s)", tokenResp.get("error_description"), tokenResp.get("error"));
+                        log.error("GitHub OAuth token exchange failed: {}", githubErrorDetail);
                     }
-                } catch (Exception ignored) {
+                } catch (Exception e) {
+                    githubErrorDetail = e.getMessage();
+                    log.error("GitHub OAuth exception during exchange: {}", e.getMessage(), e);
                 }
+            } else if (request.code() != null && (githubClientId == null || githubClientId.isBlank() || githubClientSecret == null || githubClientSecret.isBlank())) {
+                githubErrorDetail = "GitHub OAuth credentials (GITHUB_CLIENT_ID or GITHUB_CLIENT_SECRET) are missing or not set in the backend environment.";
+                log.error("GitHub OAuth attempted but credentials not configured on backend: clientId={}, secretConfigured={}",
+                        githubClientId, (githubClientSecret != null && !githubClientSecret.isBlank()));
             }
 
             if (email == null && request.code() != null) {
-                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "GitHub authentication failed. Please verify your GitHub OAuth App credentials and callback URL.");
+                String errorMsg = "GitHub authentication failed. Please verify your GitHub OAuth App credentials and callback URL.";
+                if (githubErrorDetail != null) {
+                    errorMsg += " [" + githubErrorDetail + "]";
+                }
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, errorMsg);
             }
 
             if (email == null) {

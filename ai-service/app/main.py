@@ -7,6 +7,7 @@ from app import llm_service, speech_service, vision_service, code_sandbox
 from app.schemas import (
     ExtractSkillsRequest, ExtractSkillsResponse,
     GenerateQuestionsRequest, GenerateQuestionsResponse,
+    AdaptiveQuestionRequest, AdaptiveQuestionResponse,
     EvaluateAnswerRequest, EvaluateAnswerResponse,
     FollowUpRequest, FollowUpResponse,
     SkillGapRequest, SkillGapResponse,
@@ -72,6 +73,23 @@ def evaluate_answer(req: EvaluateAnswerRequest):
     return EvaluateAnswerResponse(**result)
 
 
+@app.post("/generate-adaptive-question", response_model=AdaptiveQuestionResponse)
+def generate_adaptive_question(req: AdaptiveQuestionRequest):
+    question = llm_service.generate_adaptive_question(
+        skills=req.skills,
+        projects=req.projects,
+        requirements=req.requirements,
+        previous_question=req.previousQuestion,
+        previous_answer=req.previousAnswer,
+        previous_topic=req.previousTopic,
+        previous_score=req.previousScore,
+        current_difficulty=req.currentDifficulty or "medium",
+        asked_topics=req.askedTopics,
+        round_number=req.roundNumber
+    )
+    return AdaptiveQuestionResponse(**question)
+
+
 @app.post("/generate-followup", response_model=FollowUpResponse)
 def generate_followup(req: FollowUpRequest):
     text = llm_service.generate_followup(req.previousQuestion, req.previousAnswer, req.topic)
@@ -80,7 +98,12 @@ def generate_followup(req: FollowUpRequest):
 
 @app.post("/skill-gap", response_model=SkillGapResponse)
 def gap(req: SkillGapRequest):
-    result = llm_service.skill_gap([q.model_dump() for q in req.qaHistory])
+    result = llm_service.skill_gap(
+        qa_history=[q.model_dump() for q in req.qaHistory],
+        resume_skills=req.resumeSkills,
+        resume_projects=req.resumeProjects,
+        jd_requirements=req.jdRequirements
+    )
     return SkillGapResponse(**result)
 
 
