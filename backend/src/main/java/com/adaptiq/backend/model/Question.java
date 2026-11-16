@@ -23,10 +23,10 @@ public class Question {
     private InterviewSession session;
 
     @Lob
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "LONGTEXT")
     private String text;
 
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "TEXT")
     private String topic;
 
     @Column(nullable = false)

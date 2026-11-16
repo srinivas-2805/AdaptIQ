@@ -18,15 +18,6 @@ export default function Welcome() {
     navigate("/login");
   }
 
-  function handleCoding() {
-    const token = localStorage.getItem("adaptiq_token");
-    if (token) {
-      navigate("/coding");
-    } else {
-      navigate("/login");
-    }
-  }
-
   return (
     <div className="welcome-page-full">
       {/* Glow Backdrops */}
@@ -91,11 +82,6 @@ export default function Welcome() {
             <button type="button" className="btn-hero-primary" onClick={handleStart}>
               <span className="btn-icon">🚀</span>
               <span>Launch Mock Interview</span>
-            </button>
-
-            <button type="button" className="btn-hero-secondary" onClick={handleCoding}>
-              <span className="btn-icon">💻</span>
-              <span>Explore Coding Sandbox</span>
             </button>
 
             <button type="button" className="btn-hero-tertiary" onClick={() => {
@@ -433,14 +419,6 @@ export default function Welcome() {
                 Receive an actionable, day-by-day roadmap with specific technical topics, system design scenarios, and verbal drills to practice.
               </p>
             </div>
-
-            <div className="pillar-card">
-              <div className="pillar-icon">💻</div>
-              <h3>Auto-Executed Coding Sandbox</h3>
-              <p>
-                Tackle algorithmic challenges in Python 3 and JavaScript with isolated subprocess execution, automated unit test verification, and Big-O assessment.
-              </p>
-            </div>
           </div>
         </div>
       </section>
@@ -458,9 +436,6 @@ export default function Welcome() {
             <div className="cta-actions">
               <button type="button" className="btn-cta-primary" onClick={handleStart}>
                 Start Your First Mock Interview Now →
-              </button>
-              <button type="button" className="btn-cta-secondary" onClick={handleCoding}>
-                Practice Coding Sandbox
               </button>
             </div>
 

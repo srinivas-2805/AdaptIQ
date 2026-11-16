@@ -44,6 +44,11 @@ public class InterviewController {
         return interviewService.getReport(user, sessionId);
     }
 
+    @PostMapping("/{sessionId}/finish")
+    public SessionReportResponse finish(@AuthenticationPrincipal User user, @PathVariable Long sessionId) {
+        return interviewService.finishSession(user, sessionId);
+    }
+
     @PostMapping(value = "/transcribe", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public Map<String, Object> transcribe(
             @AuthenticationPrincipal User user,

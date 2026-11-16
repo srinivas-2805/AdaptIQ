@@ -21,7 +21,7 @@ function ProtectedRoute({ children }) {
 
 export default function App() {
   const location = useLocation();
-  const isDarkShell = ["/", "/login", "/register", "/forgot-password", "/oauth/callback"].includes(location.pathname);
+  const isDarkShell = ["/", "/login", "/register", "/forgot-password", "/oauth/callback", "/dashboard"].includes(location.pathname);
 
   return (
     <div className={`app-shell ${isDarkShell ? "welcome-shell" : ""}`}>
@@ -65,14 +65,7 @@ export default function App() {
               </ProtectedRoute>
             }
           />
-          <Route
-            path="/coding"
-            element={
-              <ProtectedRoute>
-                <CodingRound />
-              </ProtectedRoute>
-            }
-          />
+          {/* Coding round temporarily disabled per request */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

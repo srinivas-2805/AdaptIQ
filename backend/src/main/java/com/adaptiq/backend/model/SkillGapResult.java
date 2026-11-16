@@ -26,5 +26,8 @@ public class SkillGapResult {
     @Lob
     private String strengthsJson;
 
+    @Lob
+    private String missingJdSkillsJson;
+
     private Double averageScore;
 }
