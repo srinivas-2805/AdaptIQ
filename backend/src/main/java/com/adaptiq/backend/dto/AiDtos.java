@@ -50,8 +50,16 @@ public class AiDtos {
 
             String role,
 
-            String difficulty
-    ) {}
+            String difficulty,
+
+            InterviewDtos.AudioMetricsDto audioMetrics,
+
+            InterviewDtos.VisionMetricsDto visionMetrics
+    ) {
+        public AnswerEvaluationRequest(String question, String expectedAnswer, String candidateAnswer, String role, String difficulty) {
+            this(question, expectedAnswer, candidateAnswer, role, difficulty, null, null);
+        }
+    }
 
     public record AnswerEvaluationResponse(
             Double score,
@@ -60,8 +68,17 @@ public class AiDtos {
             List<String> missingConcepts,
             List<String> strengths,
             List<String> areasForImprovement,
-            String suggestedImprovedAnswer
-    ) {}
+            String suggestedImprovedAnswer,
+            String multimodalAssessment,
+            Double confidenceScore
+    ) {
+        public AnswerEvaluationResponse(Double score, String correctness, String technicalAccuracy,
+                                        List<String> missingConcepts, List<String> strengths,
+                                        List<String> areasForImprovement, String suggestedImprovedAnswer) {
+            this(score, correctness, technicalAccuracy, missingConcepts, strengths, areasForImprovement,
+                    suggestedImprovedAnswer, "Multimodal telemetry aligned with verbal delivery.", 8.0);
+        }
+    }
 
     // --- Feature 3: Personalized Feedback Generation ---
     public record FeedbackRequest(

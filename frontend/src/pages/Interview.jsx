@@ -24,7 +24,11 @@ export default function Interview() {
 
   // --- Real-Time Vision & Audio Telemetry ---
   const [eyeContactPct, setEyeContactPct] = useState(82);
-  const [postureStatus, setPostureStatus] = useState("Upright");
+  const [postureStatus, setPostureStatus] = useState("Upright & Aligned");
+  const [postureScore, setPostureScore] = useState(88);
+  const [postureNote, setPostureNote] = useState("Upright and engaged visual presence");
+  const [shoulderAngle, setShoulderAngle] = useState(0);
+  const [isMediaPipeActive, setIsMediaPipeActive] = useState(false);
   const [volumeLevel, setVolumeLevel] = useState(0);
 
   // Tracking metrics accumulated over the answer duration
@@ -37,6 +41,10 @@ export default function Interview() {
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const overlayCanvasRef = useRef(null);
+  const poseRef = useRef(null);
+  const isPoseProcessingRef = useRef(false);
+  const lastPoseTimeRef = useRef(0);
   const streamRef = useRef(null);
   const recognitionRef = useRef(null);
   const audioContextRef = useRef(null);
@@ -194,10 +202,158 @@ export default function Interview() {
     if (audioContextRef.current) {
       audioContextRef.current.close().catch(() => {});
     }
+    if (poseRef.current) {
+      try {
+        poseRef.current.close?.();
+      } catch {}
+      poseRef.current = null;
+    }
+    if (overlayCanvasRef.current) {
+      const ctx = overlayCanvasRef.current.getContext("2d");
+      if (ctx) ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height);
+    }
+    setIsMediaPipeActive(false);
   }
 
-  // --- Real-Time Vision Tracking (Face centering, Eye contact, Posture) ---
+  function initMediaPipePose() {
+    if (typeof window !== "undefined" && window.Pose && !poseRef.current) {
+      try {
+        const pose = new window.Pose({
+          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+        });
+        pose.setOptions({
+          modelComplexity: 0,
+          smoothLandmarks: true,
+          enableSegmentation: false,
+          minDetectionConfidence: 0.5,
+          minTrackingConfidence: 0.5
+        });
+        pose.onResults(onPoseResults);
+        poseRef.current = pose;
+      } catch (err) {
+        console.warn("MediaPipe Pose setup notice:", err);
+      }
+    }
+  }
+
+  function onPoseResults(results) {
+    isPoseProcessingRef.current = false;
+    const canvas = overlayCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (!results || !results.poseLandmarks || results.poseLandmarks.length < 13) {
+      return;
+    }
+
+    const lm = results.poseLandmarks;
+    const nose = lm[0];
+    const leftEar = lm[7];
+    const rightEar = lm[8];
+    const leftShoulder = lm[11];
+    const rightShoulder = lm[12];
+
+    if (!leftShoulder || !rightShoulder) return;
+
+    // 1. Calculate true shoulder alignment angle in degrees
+    const dy = leftShoulder.y - rightShoulder.y;
+    const dx = leftShoulder.x - rightShoulder.x;
+    const rawAngle = Math.abs((Math.atan2(dy, dx) * 180) / Math.PI);
+    const shoulderTilt = Math.round(Math.min(rawAngle, Math.abs(180 - rawAngle)) * 10) / 10;
+
+    // 2. Spinal & Head Centering
+    const midShoulderX = (leftShoulder.x + rightShoulder.x) / 2.0;
+    const midShoulderY = (leftShoulder.y + rightShoulder.y) / 2.0;
+    const headSpineDistance = midShoulderY - (nose ? nose.y : 0);
+    const lateralDrift = nose ? Math.abs(nose.x - midShoulderX) : 0;
+
+    // 3. Eye Contact / Gaze Centering
+    let isEyeContact = true;
+    if (nose && leftEar && rightEar) {
+      const earDist = Math.abs(rightEar.x - leftEar.x);
+      if (earDist > 0.03) {
+        const gazeRatio = (nose.x - Math.min(leftEar.x, rightEar.x)) / earDist;
+        isEyeContact = gazeRatio >= 0.38 && gazeRatio <= 0.62;
+      }
+    }
+
+    // Determine posture classification & scoring
+    let status = "Upright & Aligned";
+    let score = 92;
+    let note = "Upright, professional posture maintained with balanced shoulders.";
+
+    if (shoulderTilt > 11.0 || headSpineDistance < 0.08) {
+      status = "Noticeable Slouch";
+      score = 65;
+      note = `Shoulder tilt of ${shoulderTilt}° observed; keep shoulders level and upright.`;
+    } else if (shoulderTilt > 6.0 || lateralDrift > 0.07) {
+      status = "Slight Shoulder Tilt";
+      score = 78;
+      note = `Minor shoulder tilt detected (${shoulderTilt}°); straighten posture.`;
+    }
+
+    setPostureStatus(status);
+    setPostureScore(score);
+    setPostureNote(note);
+    setShoulderAngle(shoulderTilt);
+    setIsMediaPipeActive(true);
+
+    // Frame telemetry accumulation
+    visionStatsRef.current.totalFrames += 1;
+    if (score >= 75) visionStatsRef.current.goodPostureFrames += 1;
+    if (isEyeContact) visionStatsRef.current.centeredFrames += 1;
+
+    const runningEye = Math.round(
+      (visionStatsRef.current.centeredFrames / Math.max(1, visionStatsRef.current.totalFrames)) * 100
+    );
+    setEyeContactPct(Math.min(96, Math.max(62, runningEye)));
+
+    // Render HUD overlay guides
+    const w = canvas.width;
+    const h = canvas.height;
+    const color = shoulderTilt > 11.0 ? "#ef4444" : (shoulderTilt > 6.0 ? "#f59e0b" : "#10b981");
+
+    // Shoulder alignment beam
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(leftShoulder.x * w, leftShoulder.y * h);
+    ctx.lineTo(rightShoulder.x * w, rightShoulder.y * h);
+    ctx.stroke();
+
+    // Shoulder anchor joints
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(leftShoulder.x * w, leftShoulder.y * h, 5, 0, 2 * Math.PI);
+    ctx.arc(rightShoulder.x * w, rightShoulder.y * h, 5, 0, 2 * Math.PI);
+    ctx.fill();
+
+    // Spinal vertical alignment axis
+    if (nose) {
+      ctx.strokeStyle = "rgba(56, 189, 248, 0.7)";
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(nose.x * w, nose.y * h);
+      ctx.lineTo(midShoulderX * w, midShoulderY * h);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Head target reticle
+      ctx.strokeStyle = isEyeContact ? "rgba(16, 185, 129, 0.8)" : "rgba(245, 158, 11, 0.8)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(nose.x * w, nose.y * h, 14, 0, 2 * Math.PI);
+      ctx.stroke();
+    }
+  }
+
+  // --- Real-Time Vision Tracking (MediaPipe Pose + Optical Fallback) ---
   function startVisionLoop() {
+    initMediaPipePose();
+
     const processFrame = () => {
       // Audio level check
       if (analyserRef.current) {
@@ -207,49 +363,72 @@ export default function Interview() {
         setVolumeLevel(Math.min(100, Math.round(avg * 1.5)));
       }
 
-      // Vision analysis on canvas
-      if (videoRef.current && canvasRef.current && videoRef.current.readyState >= 2) {
+      if (videoRef.current && videoRef.current.readyState >= 2) {
         const video = videoRef.current;
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext("2d", { willReadFrequently: true });
 
-        if (canvas.width !== video.videoWidth) {
-          canvas.width = video.videoWidth || 320;
-          canvas.height = video.videoHeight || 240;
+        // Sync overlay canvas dimensions
+        if (overlayCanvasRef.current && video.videoWidth > 0) {
+          if (overlayCanvasRef.current.width !== video.videoWidth) {
+            overlayCanvasRef.current.width = video.videoWidth;
+            overlayCanvasRef.current.height = video.videoHeight;
+          }
         }
 
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const now = Date.now();
 
-        // Frame sample luminosity and center variance analysis
-        // This provides an optical flow and face presence indicator
-        visionStatsRef.current.totalFrames += 1;
+        // 1. Try MediaPipe Pose if available
+        if (!poseRef.current && typeof window !== "undefined" && window.Pose) {
+          initMediaPipePose();
+        }
 
-        // Sample center block to detect presence and stability
-        const cx = Math.floor(canvas.width / 2);
-        const cy = Math.floor(canvas.height / 2);
-        const sampleSize = 40;
-        try {
-          const centerData = ctx.getImageData(cx - sampleSize / 2, cy - sampleSize / 2, sampleSize, sampleSize);
-          let sumBrightness = 0;
-          for (let i = 0; i < centerData.data.length; i += 4) {
-            sumBrightness += (centerData.data[i] + centerData.data[i + 1] + centerData.data[i + 2]) / 3;
+        if (poseRef.current && !isPoseProcessingRef.current && (now - lastPoseTimeRef.current >= 80)) {
+          isPoseProcessingRef.current = true;
+          lastPoseTimeRef.current = now;
+          poseRef.current.send({ image: video }).catch(() => {
+            isPoseProcessingRef.current = false;
+          });
+        } else if (!poseRef.current) {
+          // 2. Optical luminance & centering fallback
+          if (canvasRef.current) {
+            const canvas = canvasRef.current;
+            const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+            if (canvas.width !== video.videoWidth) {
+              canvas.width = video.videoWidth || 320;
+              canvas.height = video.videoHeight || 240;
+            }
+
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            visionStatsRef.current.totalFrames += 1;
+
+            const cx = Math.floor(canvas.width / 2);
+            const cy = Math.floor(canvas.height / 2);
+            const sampleSize = 40;
+            try {
+              const centerData = ctx.getImageData(cx - sampleSize / 2, cy - sampleSize / 2, sampleSize, sampleSize);
+              let sumBrightness = 0;
+              for (let i = 0; i < centerData.data.length; i += 4) {
+                sumBrightness += (centerData.data[i] + centerData.data[i + 1] + centerData.data[i + 2]) / 3;
+              }
+              const avgBrightness = sumBrightness / (sampleSize * sampleSize);
+
+              const isCentered = avgBrightness > 20 && avgBrightness < 240;
+              if (isCentered) {
+                visionStatsRef.current.centeredFrames += 1;
+                visionStatsRef.current.goodPostureFrames += 1;
+              }
+
+              const runningPct = Math.round(
+                (visionStatsRef.current.centeredFrames / Math.max(1, visionStatsRef.current.totalFrames)) * 100
+              );
+              setEyeContactPct(Math.min(96, Math.max(68, runningPct)));
+              setPostureStatus(runningPct >= 75 ? "Upright & Aligned" : "Slight Tilt");
+              setPostureScore(runningPct >= 75 ? 88 : 72);
+              setPostureNote(runningPct >= 75 ? "Upright and engaged visual presence" : "Moderate eye contact with minor tilt");
+            } catch {
+              // Cross-origin or read issue
+            }
           }
-          const avgBrightness = sumBrightness / (sampleSize * sampleSize);
-
-          // If subject is framed and well lit
-          const isCentered = avgBrightness > 20 && avgBrightness < 240;
-          if (isCentered) {
-            visionStatsRef.current.centeredFrames += 1;
-            visionStatsRef.current.goodPostureFrames += 1;
-          }
-
-          const runningPct = Math.round(
-            (visionStatsRef.current.centeredFrames / Math.max(1, visionStatsRef.current.totalFrames)) * 100
-          );
-          setEyeContactPct(Math.min(96, Math.max(68, runningPct)));
-          setPostureStatus(runningPct >= 75 ? "Upright & Aligned" : "Slight Tilt");
-        } catch {
-          // Cross-origin or read issue
         }
       }
 
@@ -385,10 +564,8 @@ export default function Interview() {
 
     const visionMetrics = {
       eyeContactPercentage: eyeContactPct,
-      postureScore: postureStatus.includes("Upright") ? 88 : 72,
-      postureNote: postureStatus.includes("Upright")
-        ? "Upright and engaged visual presence"
-        : "Moderate eye contact with minor tilt",
+      postureScore: postureScore,
+      postureNote: postureNote,
       totalFramesAnalyzed: visionStatsRef.current.totalFrames || 60
     };
 
@@ -537,6 +714,19 @@ export default function Interview() {
               className="webcam-video"
               style={{ display: cameraActive ? "block" : "none" }}
             />
+            <canvas
+              ref={overlayCanvasRef}
+              className="vision-landmark-overlay"
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                height: "100%",
+                pointerEvents: "none",
+                display: cameraActive ? "block" : "none"
+              }}
+            />
             <canvas ref={canvasRef} style={{ display: "none" }} />
 
             {!cameraActive && (
@@ -555,8 +745,18 @@ export default function Interview() {
                 <div className="hud-pill">
                   👁️ Eye Contact: <strong>{eyeContactPct}%</strong>
                 </div>
-                <div className="hud-pill">
-                  🧍 Posture: <strong>{postureStatus}</strong>
+                <div
+                  className="hud-pill"
+                  style={{
+                    borderLeft: `3px solid ${shoulderAngle > 11 ? "#ef4444" : (shoulderAngle > 6 ? "#f59e0b" : "#10b981")}`
+                  }}
+                >
+                  🧍 Posture: <strong>{postureStatus}</strong> {shoulderAngle > 0 ? `(${shoulderAngle}°)` : ""}
+                </div>
+                <div className="hud-pill" style={{ background: isMediaPipeActive ? "rgba(15, 23, 42, 0.9)" : "rgba(15, 23, 42, 0.75)" }}>
+                  <span style={{ color: isMediaPipeActive ? "#38bdf8" : "#94a3b8", fontSize: "11px", fontWeight: "600" }}>
+                    {isMediaPipeActive ? "⚡ MediaPipe Pose" : "📷 Optical Vision"}
+                  </span>
                 </div>
                 <div className="hud-pill" style={{ background: wsConnected ? "rgba(16, 185, 129, 0.85)" : "rgba(245, 158, 11, 0.85)" }}>
                   {wsConnected ? "🟢 Telemetry: Connected" : "🟡 Telemetry: Connecting..."}

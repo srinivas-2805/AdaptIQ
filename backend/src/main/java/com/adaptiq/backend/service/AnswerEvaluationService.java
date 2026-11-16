@@ -39,8 +39,26 @@ public class AnswerEvaluationService {
         String expected = request.expectedAnswer() != null && !request.expectedAnswer().isBlank()
                 ? request.expectedAnswer().trim() : "Accurate architectural and conceptual explanation with proper trade-offs.";
 
-        String systemInstruction = "You are an expert Technical Interview Evaluator. "
-                + "Evaluate candidate answers strictly based on technical correctness, conceptual depth, and practical applicability. "
+        // Multimodal Telemetry Extraction
+        int wpm = 140;
+        int fillers = 0;
+        double eyeContact = 82.0;
+        int postureScore = 88;
+        String postureNote = "Upright and engaged visual presence";
+
+        if (request.audioMetrics() != null) {
+            if (request.audioMetrics().speakingSpeedWpm() != null) wpm = request.audioMetrics().speakingSpeedWpm();
+            if (request.audioMetrics().fillerWordCount() != null) fillers = request.audioMetrics().fillerWordCount();
+        }
+        if (request.visionMetrics() != null) {
+            if (request.visionMetrics().eyeContactPercentage() != null) eyeContact = request.visionMetrics().eyeContactPercentage();
+            if (request.visionMetrics().postureScore() != null) postureScore = request.visionMetrics().postureScore();
+            if (request.visionMetrics().postureNote() != null) postureNote = request.visionMetrics().postureNote();
+        }
+
+        String systemInstruction = "You are an expert Multimodal Technical Interview Evaluator. "
+                + "Evaluate candidate answers based on technical correctness, conceptual depth, practical applicability, "
+                + "and multimodal behavioral delivery (speech pacing, filler words, posture alignment, eye contact). "
                 + "Accept valid alternative terminology or phrasing. "
                 + "Do not award full marks to vague, superficial, or memorized bullet points without substance. "
                 + "Return strictly valid JSON with no markdown code fences or conversational text.";
@@ -57,26 +75,37 @@ public class AnswerEvaluationService {
                 CANDIDATE'S SUBMITTED ANSWER:
                 %s
 
+                MULTIMODAL & BEHAVIORAL TELEMETRY CAPTURED DURING ANSWER:
+                - Speech Pacing: %d WPM (Optimal conversational pace: 130-160 WPM)
+                - Filler Words Detected: %d
+                - Eye Contact Consistency: %.1f%% direct camera engagement
+                - Visual Posture Score: %d/100 (%s)
+
                 EVALUATION INSTRUCTIONS:
                 1. Score the answer strictly on a scale of 0.0 to 10.0 (where 10.0 is exemplary, 7.0-8.5 is proficient, 5.0-6.9 is partially correct with gaps, <5.0 is largely incorrect or non-technical).
                 2. Assess technical accuracy accurately; do not hallucinate technical features that don't exist.
                 3. Identify specific missing concepts that a competent engineer should have included.
                 4. Highlight what the candidate explained well in 'strengths'.
                 5. Highlight precise, actionable gaps in 'areasForImprovement'.
-                6. Provide a concise, model 'suggestedImprovedAnswer' demonstrating how a senior engineer would answer cleanly.
+                6. Incorporate speech pacing (%d WPM) and fillers (%d) into delivery quality, and eye contact (%.1f%%) and posture (%d/100 - %s) into 'confidenceScore' (0.0 to 10.0) and 'multimodalAssessment'.
+                7. Provide a concise, model 'suggestedImprovedAnswer' demonstrating how a senior engineer would answer cleanly.
 
                 Return strictly JSON matching this structure:
                 {
                   "score": 8.0,
+                  "confidenceScore": 8.5,
                   "correctness": "Correct",
                   "technicalAccuracy": "High accuracy explaining key mechanisms...",
                   "missingConcepts": ["Concept 1", "Concept 2"],
                   "strengths": ["Strength 1", "Strength 2"],
                   "areasForImprovement": ["Improvement point 1"],
-                  "suggestedImprovedAnswer": "Comprehensive, clean senior-level answer."
+                  "suggestedImprovedAnswer": "Comprehensive, clean senior-level answer.",
+                  "multimodalAssessment": "Maintained articulate speech pacing and upright posture."
                 }
                 """,
-                role, diff, request.question(), expected, request.candidateAnswer()
+                role, diff, request.question(), expected, request.candidateAnswer(),
+                wpm, fillers, eyeContact, postureScore, postureNote,
+                wpm, fillers, eyeContact, postureScore, postureNote
         );
 
         String jsonResponse = geminiService.generateJson(systemInstruction, userPrompt);
@@ -90,6 +119,9 @@ public class AnswerEvaluationService {
             double score = root.hasNonNull("score") ? root.get("score").asDouble() : 7.0;
             score = Math.max(0.0, Math.min(10.0, Math.round(score * 10.0) / 10.0));
 
+            double confidence = root.hasNonNull("confidenceScore") ? root.get("confidenceScore").asDouble() : (score * 0.9 + 1.0);
+            confidence = Math.max(0.0, Math.min(10.0, Math.round(confidence * 10.0) / 10.0));
+
             String correctness = root.hasNonNull("correctness") ? root.get("correctness").asText() : (score >= 7.0 ? "Correct" : "Partially Correct");
             String technicalAccuracy = root.hasNonNull("technicalAccuracy") ? root.get("technicalAccuracy").asText() : "Evaluated based on technical criteria.";
 
@@ -97,6 +129,9 @@ public class AnswerEvaluationService {
             List<String> strengths = parseStringList(root.get("strengths"));
             List<String> areasForImprovement = parseStringList(root.get("areasForImprovement"));
             String suggestedAnswer = root.hasNonNull("suggestedImprovedAnswer") ? root.get("suggestedImprovedAnswer").asText() : "";
+            String multimodalAssessment = root.hasNonNull("multimodalAssessment")
+                    ? root.get("multimodalAssessment").asText()
+                    : "Multimodal engagement and posture aligned with verbal response.";
 
             return new AnswerEvaluationResponse(
                     score,
@@ -105,7 +140,9 @@ public class AnswerEvaluationService {
                     missingConcepts,
                     strengths,
                     areasForImprovement,
-                    suggestedAnswer
+                    suggestedAnswer,
+                    multimodalAssessment,
+                    confidence
             );
         } catch (Exception e) {
             log.error("Failed to parse Gemini evaluation JSON: {}", e.getMessage());

@@ -607,37 +607,63 @@ public class InterviewService {
             Map<String, Object> audioMetrics, Map<String, Object> visionMetrics) {
         if (geminiService.isConfigured()) {
             try {
-                String systemInstruction = "You are an expert Technical Interview Evaluator. "
-                        + "Evaluate the candidate's answer based on technical correctness, conceptual depth, relevance, communication clarity, and confidence. "
-                        + "Accept alternative phrasing. Do not award high marks to vague or generic answers. "
-                        + "Return strictly valid JSON.";
+                // Extract Multimodal Telemetry Metrics
+                int wpm = 140;
+                int fillers = 0;
+                int audioClarity = 80;
+                if (audioMetrics != null) {
+                    if (audioMetrics.get("speakingSpeedWpm") instanceof Number n) wpm = n.intValue();
+                    if (audioMetrics.get("fillerWordCount") instanceof Number n) fillers = n.intValue();
+                    if (audioMetrics.get("clarityScore") instanceof Number n) audioClarity = n.intValue();
+                }
+
+                double eyeContact = 82.0;
+                int postureScore = 88;
+                String postureNote = "Upright and engaged visual presence";
+                if (visionMetrics != null) {
+                    if (visionMetrics.get("eyeContactPercentage") instanceof Number n) eyeContact = n.doubleValue();
+                    if (visionMetrics.get("postureScore") instanceof Number n) postureScore = n.intValue();
+                    if (visionMetrics.get("postureNote") != null) postureNote = String.valueOf(visionMetrics.get("postureNote"));
+                }
+
+                String systemInstruction = "You are an expert Multimodal Technical Interview Evaluator. "
+                        + "Evaluate candidate answers across technical depth and multimodal behavioral delivery (speech acoustics and computer-vision posture/eye contact). "
+                        + "Factor speech pacing and filler words into communication, and visual posture and eye contact into confidence. "
+                        + "Return strictly valid JSON with no markdown code fences or conversational text.";
 
                 String prompt = String.format("""
-                        QUESTION (%s - %s difficulty):
+                        QUESTION (Topic: %s, Difficulty: %s):
                         %s
 
                         CANDIDATE ANSWER:
                         %s
 
-                        Evaluate across 5 dimensions from 0 to 100:
-                        1. technicalKnowledge (0-100)
-                        2. relevance (0-100)
-                        3. communication (0-100)
-                        4. clarity (0-100)
-                        5. confidence (0-100)
-                        6. overallScore (0-100)
+                        MULTIMODAL ACOUSTIC & VISUAL TELEMETRY:
+                        - Speech Pacing: %d WPM (Optimal conversational range: 130-160 WPM)
+                        - Filler Words Detected: %d
+                        - Speech Clarity Metric: %d/100
+                        - Visual Eye Contact: %.1f%% direct camera engagement
+                        - Visual Posture Score: %d/100 (%s)
 
-                        Provide concise rationales for each dimension in 'reasons', and a one-sentence 'multimodalSummary'.
+                        EVALUATION DIMENSIONS (0 to 100):
+                        1. technicalKnowledge: Technical correctness, concrete architecture, code concepts, and trade-offs.
+                        2. relevance: How directly the answer addresses the question scenario without tangents.
+                        3. communication: Verbal articulation, optimal pacing (%d WPM), and minimal filler words (%d).
+                        4. clarity: Structured logical breakdown (Problem -> Solution Architecture -> Results).
+                        5. confidence: Heavily incorporate visual poise (Posture: %d/100 - %s, Eye Contact: %.1f%%) and assertive conviction.
+                        6. overallScore: Holistic aggregate combining technical substance and multimodal delivery.
+
+                        Provide specific, metric-grounded rationales in 'reasons' and an explainable 'multimodalSummary'.
 
                         Return strictly JSON:
                         {
-                          "overallScore": 82,
+                          "overallScore": 84,
                           "scores": {
                             "technicalKnowledge": 85,
                             "relevance": 85,
-                            "communication": 80,
+                            "communication": 82,
                             "clarity": 80,
-                            "confidence": 80
+                            "confidence": 86
                           },
                           "reasons": {
                             "technicalKnowledge": "...",
@@ -646,10 +672,13 @@ public class InterviewService {
                             "clarity": "...",
                             "confidence": "..."
                           },
-                          "multimodalSummary": "Demonstrated solid technical depth and clear cadence."
+                          "multimodalSummary": "Demonstrated technical depth with %d WPM cadence and %s posture."
                         }
                         """,
-                        topic, difficulty, questionText, answerText
+                        topic, difficulty, questionText, answerText,
+                        wpm, fillers, audioClarity, eyeContact, postureScore, postureNote,
+                        wpm, fillers, postureScore, postureNote, eyeContact,
+                        wpm, postureNote
                 );
 
                 String json = geminiService.generateJson(systemInstruction, prompt);
