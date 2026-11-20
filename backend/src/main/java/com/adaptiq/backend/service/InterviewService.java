@@ -3,6 +3,7 @@ package com.adaptiq.backend.service;
 import com.adaptiq.backend.dto.InterviewDtos.*;
 import com.adaptiq.backend.model.*;
 import com.adaptiq.backend.repository.*;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -520,6 +521,28 @@ public class InterviewService {
             distinctGaps = List.of("Deep Concurrency Diagnostics", "Direct Eye Contact Consistency");
         }
 
+        // Fetch latest saved preparation plan for this user
+        List<PrepDayDto> latestPlan = null;
+        for (InterviewSession s : userSessions) {
+            Optional<PreparationPlan> planOpt = preparationPlanRepository.findBySession(s);
+            if (planOpt.isPresent() && planOpt.get().getPlanJson() != null) {
+                try {
+                    List<PrepDayDto> parsed = objectMapper.readValue(
+                            planOpt.get().getPlanJson(),
+                            new TypeReference<List<PrepDayDto>>() {}
+                    );
+                    if (parsed != null && !parsed.isEmpty()) {
+                        latestPlan = parsed;
+                        break;
+                    }
+                } catch (Exception ignored) {}
+            }
+        }
+
+        if (latestPlan == null || latestPlan.isEmpty()) {
+            latestPlan = buildFoundationalPlan(distinctGaps);
+        }
+
         return new DashboardTrendDto(
                 items,
                 Math.round(totalAvg * 10.0) / 10.0,
@@ -531,7 +554,41 @@ public class InterviewService {
                 Math.round(avgWpm * 10.0) / 10.0,
                 Math.round(avgFillers * 10.0) / 10.0,
                 Math.round(avgEyeContact * 10.0) / 10.0,
-                Math.round(avgPosture * 10.0) / 10.0
+                Math.round(avgPosture * 10.0) / 10.0,
+                latestPlan
+        );
+    }
+
+    private List<PrepDayDto> buildFoundationalPlan(List<String> weakAreas) {
+        String primaryGap = !weakAreas.isEmpty() ? weakAreas.get(0) : "System Architecture & Scalability";
+        String secondaryGap = weakAreas.size() > 1 ? weakAreas.get(1) : "Deep Concurrency & Locking Semantics";
+
+        return List.of(
+                new PrepDayDto(1, primaryGap + " Drills", List.of(
+                        "Review core architectural patterns and trade-offs for " + primaryGap,
+                        "Practice whiteboarding end-to-end data flow and failure modes",
+                        "Complete high-signal scenario questions focusing on database indexing and caching"
+                )),
+                new PrepDayDto(2, secondaryGap + " Mastery", List.of(
+                        "Deep dive into race conditions, deadlock scenarios, and CAS operations",
+                        "Review synchronization semantics and distributed consistency models",
+                        "Formulate crisp 2-minute architectural answers without hesitation"
+                )),
+                new PrepDayDto(3, "Multimodal Mirror: Speech & Gaze Calibration", List.of(
+                        "Calibrate speaking rate to optimal 130-150 words per minute",
+                        "Eliminate filler words ('um', 'like', 'you know') using deliberate pauses",
+                        "Maintain steady 80%+ webcam eye contact with the interviewer HUD"
+                )),
+                new PrepDayDto(4, "Live Coding Sandbox Sprint", List.of(
+                        "Execute algorithm problems in the live sandbox under timed constraints",
+                        "Verify edge cases: null values, empty collections, and extreme bounds",
+                        "Explain time and space complexity with absolute clarity"
+                )),
+                new PrepDayDto(5, "High-Stakes Full Mock Simulation", List.of(
+                        "Run a full 8-question adaptive interview round in AdaptIQ",
+                        "Apply the STAR technique for all scenario-based questions",
+                        "Review the generated 5D scorecard and verify score progression"
+                ))
         );
     }
 
@@ -582,7 +639,7 @@ public class InterviewService {
                         askedTopics, roundNumber, targetDiff, targetDiff
                 );
 
-                String json = geminiService.generateJson(systemInstruction, prompt);
+                String json = geminiService.generateJson(systemInstruction, prompt, 350);
                 JsonNode root = objectMapper.readTree(json);
                 String text = root.hasNonNull("text") ? root.get("text").asText()
                         : (root.hasNonNull("question") ? root.get("question").asText() : "");
@@ -681,7 +738,7 @@ public class InterviewService {
                         wpm, postureNote
                 );
 
-                String json = geminiService.generateJson(systemInstruction, prompt);
+                String json = geminiService.generateJson(systemInstruction, prompt, 800);
                 JsonNode root = objectMapper.readTree(json);
                 int overall = root.hasNonNull("overallScore") ? root.get("overallScore").asInt() : 75;
 
@@ -753,7 +810,7 @@ public class InterviewService {
                         resumeSkills, resumeProjects, jdRequirements, jsonUtil.toJson(qaForAi)
                 );
 
-                String json = geminiService.generateJson(systemInstruction, prompt);
+                String json = geminiService.generateJson(systemInstruction, prompt, 800);
                 JsonNode root = objectMapper.readTree(json);
                 List<String> weak = new ArrayList<>();
                 List<String> str = new ArrayList<>();
@@ -800,7 +857,7 @@ public class InterviewService {
                         weakAreas, days
                 );
 
-                String json = geminiService.generateJson(systemInstruction, prompt);
+                String json = geminiService.generateJson(systemInstruction, prompt, 800);
                 JsonNode root = objectMapper.readTree(json);
                 JsonNode planNode = root.has("plan") ? root.get("plan") : root;
                 List<Map<String, Object>> plan = new ArrayList<>();

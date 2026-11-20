@@ -26,41 +26,51 @@ const SAMPLE_PERSONAS = [
   }
 ];
 
-const ROADMAP_DAYS = [
+const DEFAULT_PREP_PLAN = [
   {
     day: 1,
-    title: "System Architecture & Scalability",
-    focus: "REST vs gRPC, database indexing, Redis caching, microservice trade-offs.",
-    status: "Completed",
-    tag: "Day 1 Drill"
+    focus: "System Architecture & Scalability",
+    tasks: [
+      "Review REST vs gRPC trade-offs, database indexing, and Redis caching strategies",
+      "Diagram high-throughput distributed microservice failure modes and circuit breakers",
+      "Practice answering system scalability questions using structured architectural principles"
+    ]
   },
   {
     day: 2,
-    title: "Deep Concurrency & Data Structures",
-    focus: "Thread synchronization, deadlock avoidance, locking semantics, algorithmic complexity.",
-    status: "In Progress",
-    tag: "Active Focus"
+    focus: "Deep Concurrency & Locking Semantics",
+    tasks: [
+      "Analyze race conditions, deadlock detection, and CAS (Compare-And-Swap) operations",
+      "Deep dive into thread synchronization and optimistic vs pessimistic locking",
+      "Formulate concise explanations for thread pool sizing and resource contention"
+    ]
   },
   {
     day: 3,
-    title: "Multimodal Mirror: Speech & Gaze",
-    focus: "Pacing drills (130-150 WPM), reducing filler words, steady eye-contact via MediaPipe.",
-    status: "Up Next",
-    tag: "Acoustics & HUD"
+    focus: "Multimodal Mirror: Speech Pacing & Gaze Stability",
+    tasks: [
+      "Run verbal pacing drills targeting 130-150 words per minute",
+      "Reduce filler words ('um', 'like', 'you know') using strategic 1-2 second pauses",
+      "Maintain steady 80%+ webcam eye-contact directly with the interviewer HUD"
+    ]
   },
   {
     day: 4,
-    title: "Live Coding Sandbox Sprint",
-    focus: "Auto-tested algorithmic problem solving under timed execution constraints.",
-    status: "Locked",
-    tag: "Coding Round"
+    focus: "Live Technical Coding Sandbox Drills",
+    tasks: [
+      "Execute algorithmic data structure challenges in the integrated sandbox",
+      "Stress test edge conditions: empty collections, null inputs, and integer overflows",
+      "Articulate Big-O time and space trade-offs clearly before writing code"
+    ]
   },
   {
     day: 5,
-    title: "High-Stakes Full Mock Simulation",
-    focus: "Full 8-question adaptive interview round combining technical depth and behavioral STAR delivery.",
-    status: "Locked",
-    tag: "Final Boss"
+    focus: "High-Stakes Full Mock Adaptive Interview",
+    tasks: [
+      "Complete an adaptive technical interview round combining system depth and STAR delivery",
+      "Review the comprehensive 5D feedback scorecard and identified skill gaps",
+      "Verify measurable improvement in technical clarity and delivery confidence"
+    ]
   }
 ];
 
@@ -68,7 +78,7 @@ export default function Dashboard() {
   const [trends, setTrends] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [activeRoadmapDay, setActiveRoadmapDay] = useState(2);
+  const [activeRoadmapDay, setActiveRoadmapDay] = useState(1);
   const [filterStatus, setFilterStatus] = useState("ALL"); // ALL | COMPLETED | IN_PROGRESS
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState("table"); // table | cards
@@ -135,6 +145,17 @@ export default function Dashboard() {
       problemSolving: Math.round(overallAverage)
     };
   }, [trends, hasCompleted, overallAverage]);
+
+  const prepPlan = useMemo(() => {
+    if (trends?.latestPreparationPlan && Array.isArray(trends.latestPreparationPlan) && trends.latestPreparationPlan.length > 0) {
+      return trends.latestPreparationPlan;
+    }
+    return DEFAULT_PREP_PLAN;
+  }, [trends]);
+
+  const isPersonalized = useMemo(() => {
+    return Boolean(trends?.latestPreparationPlan && Array.isArray(trends.latestPreparationPlan) && trends.latestPreparationPlan.length > 0);
+  }, [trends]);
 
   // Real multimodal telemetry computed from user's actual evaluations
   const realWpm = trends?.avgSpeakingSpeedWpm && trends.avgSpeakingSpeedWpm > 0
@@ -722,12 +743,29 @@ export default function Dashboard() {
         <section className="dash-card" style={{ marginBottom: "28px" }}>
           <div className="dash-card-header">
             <div>
-              <h3 className="dash-card-title">
-                <span>🗓️</span>
-                <span>Personalized 5-Day Preparation Roadmap</span>
-              </h3>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", marginBottom: "4px" }}>
+                <h3 className="dash-card-title" style={{ margin: 0 }}>
+                  <span>🗓️</span>
+                  <span>Personalized 5-Day Preparation Roadmap</span>
+                </h3>
+                <span
+                  style={{
+                    fontSize: "11px",
+                    fontWeight: "700",
+                    padding: "3px 8px",
+                    borderRadius: "6px",
+                    background: isPersonalized ? "rgba(16, 185, 129, 0.2)" : "rgba(56, 189, 248, 0.15)",
+                    color: isPersonalized ? "#34d399" : "#38bdf8",
+                    border: isPersonalized ? "1px solid rgba(16, 185, 129, 0.3)" : "1px solid rgba(56, 189, 248, 0.3)"
+                  }}
+                >
+                  {isPersonalized ? "⚡ Live: Calibrated from Your Mock Interview" : "Standard Foundational Curriculum"}
+                </span>
+              </div>
               <span className="dash-card-subtitle">
-                Tailored curriculum generated dynamically based on your resume, target job description, and skill gaps
+                {isPersonalized
+                  ? "Generated dynamically based on your identified weak areas, resume, and role requirements"
+                  : "Targeted curriculum designed to eliminate common technical, architectural, and behavioral blind spots"}
               </span>
             </div>
 
@@ -743,19 +781,37 @@ export default function Dashboard() {
                 gap: "4px"
               }}
             >
-              <span>Refresh Curriculum</span>
+              <span>{isPersonalized ? "Run New Mock Interview" : "Start Mock Interview"}</span>
               <span>→</span>
             </Link>
           </div>
 
           <div className="roadmap-timeline-grid">
-            {ROADMAP_DAYS.map((item) => {
+            {prepPlan.map((item) => {
               const isSelected = activeRoadmapDay === item.day;
+              const statusTag = isSelected
+                ? "Active Focus"
+                : item.day === 1
+                ? "Day 1 Drill"
+                : item.day === 2
+                ? "Day 2 Focus"
+                : item.day === 4
+                ? "Sandbox Sprint"
+                : item.day === 5
+                ? "Full Mock"
+                : "Scheduled";
+
               return (
                 <div
                   key={item.day}
                   className={`roadmap-day-card ${isSelected ? "active" : ""}`}
                   onClick={() => setActiveRoadmapDay(item.day)}
+                  style={{
+                    cursor: "pointer",
+                    transition: "all 0.2s ease",
+                    border: isSelected ? "1.5px solid #38bdf8" : "1px solid rgba(255, 255, 255, 0.08)",
+                    boxShadow: isSelected ? "0 0 16px rgba(56, 189, 248, 0.2)" : "none"
+                  }}
                 >
                   <div className="roadmap-day-badge">
                     <span>Day 0{item.day}</span>
@@ -763,24 +819,131 @@ export default function Dashboard() {
                       fontSize: "10px",
                       padding: "2px 6px",
                       borderRadius: "4px",
-                      background: item.status === "Completed" ? "rgba(16, 185, 129, 0.15)" : item.status === "In Progress" ? "rgba(56, 189, 248, 0.15)" : "rgba(255, 255, 255, 0.05)",
-                      color: item.status === "Completed" ? "#34d399" : item.status === "In Progress" ? "#38bdf8" : "#64748b"
+                      background: isSelected ? "rgba(56, 189, 248, 0.2)" : "rgba(255, 255, 255, 0.05)",
+                      color: isSelected ? "#38bdf8" : "#94a3b8"
                     }}>
-                      {item.status}
+                      {statusTag}
                     </span>
                   </div>
 
-                  <h4 className="roadmap-day-title">{item.title}</h4>
-                  <p className="roadmap-day-focus">{item.focus}</p>
+                  <h4 className="roadmap-day-title" style={{ fontSize: "14px", lineHeight: "1.4", margin: "10px 0 6px" }}>
+                    {item.focus || item.title}
+                  </h4>
+                  <p className="roadmap-day-focus" style={{ fontSize: "12px", color: "#94a3b8", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                    {item.tasks && item.tasks.length > 0 ? item.tasks[0] : item.focus}
+                  </p>
 
                   <div style={{ marginTop: "12px", paddingTop: "8px", borderTop: "1px solid rgba(255, 255, 255, 0.06)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: "11px", color: "#38bdf8", fontWeight: "600" }}>{item.tag}</span>
+                    <span style={{ fontSize: "11px", color: "#38bdf8", fontWeight: "600" }}>
+                      {item.tasks?.length ? `${item.tasks.length} Action Drills` : "Daily Focus"}
+                    </span>
                     <span style={{ fontSize: "12px", color: isSelected ? "#38bdf8" : "#64748b" }}>→</span>
                   </div>
                 </div>
               );
             })}
           </div>
+
+          {/* Active Selected Day Actionable Tasks & Details */}
+          {(() => {
+            const currentDay = prepPlan.find((p) => p.day === activeRoadmapDay) || prepPlan[0];
+            if (!currentDay) return null;
+            return (
+              <div
+                className="roadmap-day-detail-panel"
+                style={{
+                  marginTop: "20px",
+                  padding: "20px",
+                  borderRadius: "12px",
+                  background: "rgba(15, 23, 42, 0.8)",
+                  border: "1px solid rgba(56, 189, 248, 0.3)",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px", flexWrap: "wrap", gap: "10px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                    <span style={{
+                      padding: "4px 10px",
+                      borderRadius: "6px",
+                      background: "#0284c7",
+                      color: "#fff",
+                      fontSize: "12px",
+                      fontWeight: "700"
+                    }}>
+                      DAY 0{currentDay.day} ACTION PLAN
+                    </span>
+                    <h4 style={{ margin: 0, fontSize: "16px", color: "#f8fafc", fontWeight: "600" }}>
+                      {currentDay.focus}
+                    </h4>
+                  </div>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <Link
+                      to="/coding"
+                      style={{
+                        textDecoration: "none",
+                        color: "#38bdf8",
+                        background: "rgba(56, 189, 248, 0.12)",
+                        border: "1px solid rgba(56, 189, 248, 0.3)",
+                        padding: "6px 12px",
+                        borderRadius: "8px",
+                        fontSize: "12px",
+                        fontWeight: "600"
+                      }}
+                    >
+                      Sandbox Practice 💻
+                    </Link>
+                    <Link
+                      to="/upload"
+                      style={{
+                        textDecoration: "none",
+                        color: "#34d399",
+                        background: "rgba(16, 185, 129, 0.12)",
+                        border: "1px solid rgba(16, 185, 129, 0.3)",
+                        padding: "6px 12px",
+                        borderRadius: "8px",
+                        fontSize: "12px",
+                        fontWeight: "600"
+                      }}
+                    >
+                      Adaptive Interview 🎙️
+                    </Link>
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: "12px", fontSize: "13px", color: "#94a3b8" }}>
+                  Targeted drills calibrated to eliminate knowledge gaps and optimize evaluation scores:
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                  {currentDay.tasks && currentDay.tasks.length > 0 ? (
+                    currentDay.tasks.map((task, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: "12px",
+                          padding: "12px 14px",
+                          borderRadius: "8px",
+                          background: "rgba(255, 255, 255, 0.03)",
+                          border: "1px solid rgba(255, 255, 255, 0.07)",
+                          color: "#e2e8f0",
+                          fontSize: "13.5px",
+                          lineHeight: "1.5"
+                        }}
+                      >
+                        <span style={{ color: "#38bdf8", fontWeight: "bold", fontSize: "15px" }}>✓</span>
+                        <span>{task}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div style={{ padding: "12px", color: "#94a3b8", fontSize: "13px" }}>
+                      No specific tasks registered for this day yet. Complete an interview round to generate a personalized day breakdown.
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
         </section>
 
         {/* Interview History Command Center */}

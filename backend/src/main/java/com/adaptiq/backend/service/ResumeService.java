@@ -37,6 +37,9 @@ public class ResumeService {
     private final JsonUtil jsonUtil;
     private final ObjectMapper objectMapper;
 
+    private record ExtractedProfile(List<String> skills, List<String> projects, List<String> requirements) {}
+    private final Map<String, ExtractedProfile> profileCache = new java.util.concurrent.ConcurrentHashMap<>();
+
     public ResumeService(ResumeRepository resumeRepository,
                           JobDescriptionRepository jobDescriptionRepository,
                           AiServiceClient aiServiceClient,
@@ -56,7 +59,19 @@ public class ResumeService {
         List<String> projects = new ArrayList<>();
         List<String> requirements = new ArrayList<>();
 
-        if (geminiService.isConfigured()) {
+        String rawResume = request.resumeText() != null ? request.resumeText().trim() : "";
+        String rawJd = request.jdText() != null ? request.jdText().trim() : "";
+        String cacheKey = (rawResume.length() > 500 ? rawResume.substring(0, 500) + rawResume.length() : rawResume)
+                + "###" + (rawJd.length() > 200 ? rawJd.substring(0, 200) + rawJd.length() : rawJd);
+
+        ExtractedProfile cached = profileCache.get(cacheKey);
+        if (cached != null) {
+            skills = new ArrayList<>(cached.skills());
+            projects = new ArrayList<>(cached.projects());
+            requirements = new ArrayList<>(cached.requirements());
+        }
+
+        if (skills.isEmpty() && projects.isEmpty() && geminiService.isConfigured()) {
             try {
                 String systemInstruction = "You are a Technical Recruiter AI. Extract verified programming languages, frameworks, and tools in 'skills', "
                         + "concrete project names in 'projects', and target job requirements in 'requirements'. Return strictly valid JSON.";
@@ -76,11 +91,11 @@ public class ResumeService {
                           "requirements": ["..."]
                         }
                         """,
-                        request.resumeText() != null ? request.resumeText().substring(0, Math.min(request.resumeText().length(), 10000)) : "",
-                        request.jdText() != null ? request.jdText() : ""
+                        rawResume.substring(0, Math.min(rawResume.length(), 6000)),
+                        rawJd
                 );
 
-                String json = geminiService.generateJson(systemInstruction, prompt);
+                String json = geminiService.generateJson(systemInstruction, prompt, 800);
                 JsonNode root = objectMapper.readTree(json);
                 if (root.has("skills") && root.get("skills").isArray()) {
                     for (JsonNode n : root.get("skills")) if (n.isTextual()) skills.add(n.asText());
@@ -90,6 +105,10 @@ public class ResumeService {
                 }
                 if (root.has("requirements") && root.get("requirements").isArray()) {
                     for (JsonNode n : root.get("requirements")) if (n.isTextual()) requirements.add(n.asText());
+                }
+
+                if (!skills.isEmpty() || !projects.isEmpty()) {
+                    profileCache.put(cacheKey, new ExtractedProfile(List.copyOf(skills), List.copyOf(projects), List.copyOf(requirements)));
                 }
             } catch (Exception e) {
                 log.warn("Gemini resume extraction fell back to AI service: {}", e.getMessage());

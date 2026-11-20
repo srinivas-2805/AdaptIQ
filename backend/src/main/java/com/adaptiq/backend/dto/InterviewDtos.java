@@ -97,7 +97,8 @@ public class InterviewDtos {
             Double avgSpeakingSpeedWpm,
             Double avgFillerWordCount,
             Double avgEyeContactPercentage,
-            Double avgPostureScore
+            Double avgPostureScore,
+            List<PrepDayDto> latestPreparationPlan
     ) {}
 
     public record CurrentQuestionResponse(QuestionDto question, boolean sessionComplete) {}

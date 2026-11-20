@@ -10,7 +10,7 @@ public class GeminiConfig {
     @Value("${gemini.api.key:}")
     private String apiKey;
 
-    @Value("${gemini.api.model:gemini-3.5-flash}")
+    @Value("${gemini.api.model:gemini-2.5-flash}")
     private String model;
 
     public String getApiKey() {
@@ -22,7 +22,7 @@ public class GeminiConfig {
     }
 
     public String getModel() {
-        return (model != null && !model.isBlank()) ? model.trim() : "gemini-3.5-flash";
+        return (model != null && !model.isBlank()) ? model.trim() : "gemini-2.5-flash";
     }
 
     public Client createClient() {

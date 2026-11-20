@@ -87,6 +87,7 @@ export default function Upload() {
   const [file, setFile] = useState(null);
   const [questionCount, setQuestionCount] = useState(5);
   const [loading, setLoading] = useState(false);
+  const [loadingStatus, setLoadingStatus] = useState("");
   const [error, setError] = useState("");
   const [extraction, setExtraction] = useState(null);
   const navigate = useNavigate();
@@ -125,6 +126,7 @@ export default function Upload() {
     e.preventDefault();
     setError("");
     setLoading(true);
+    setLoadingStatus("Analyzing profile & extracting tech stack...");
 
     try {
       let uploadData;
@@ -149,6 +151,7 @@ export default function Upload() {
       }
 
       setExtraction(uploadData);
+      setLoadingStatus("Generating tailored opening adaptive interview question...");
 
       // Start interview session with personalized questions
       const { data: startData } = await api.post("/interviews/start", {
@@ -157,6 +160,7 @@ export default function Upload() {
         questionCount: Number(questionCount),
       });
 
+      setLoadingStatus("Ready! Launching mock interview...");
       navigate(`/interview/${startData.sessionId}`, {
         state: { firstQuestion: startData.questions[0] }
       });
@@ -164,6 +168,7 @@ export default function Upload() {
       setError(err.response?.data?.message || err.message || "Failed to process resume and start interview");
     } finally {
       setLoading(false);
+      setLoadingStatus("");
     }
   }
 
@@ -312,10 +317,21 @@ export default function Upload() {
             width: "100%",
             padding: "14px",
             fontSize: "16px",
-            fontWeight: "600"
+            fontWeight: "600",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "8px"
           }}
         >
-          {loading ? "Analyzing Profile & Generating Questions..." : "Generate Personalized Questions & Begin"}
+          {loading ? (
+            <>
+              <span className="spinner" style={{ width: "16px", height: "16px", border: "2px solid #ffffff", borderTopColor: "transparent", borderRadius: "50%", display: "inline-block", animation: "spin 1s linear infinite" }} />
+              <span>{loadingStatus || "Analyzing Profile & Generating Questions..."}</span>
+            </>
+          ) : (
+            "Generate Personalized Questions & Begin"
+          )}
         </button>
       </form>
 

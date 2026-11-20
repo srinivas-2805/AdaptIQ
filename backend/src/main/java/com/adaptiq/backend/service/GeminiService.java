@@ -22,6 +22,7 @@ public class GeminiService {
     private static final Logger log = LoggerFactory.getLogger(GeminiService.class);
 
     private final GeminiConfig geminiConfig;
+    private volatile String activeModel = null;
 
     public GeminiService(GeminiConfig geminiConfig) {
         this.geminiConfig = geminiConfig;
@@ -32,16 +33,29 @@ public class GeminiService {
     }
 
     public String generateJson(String systemInstruction, String userPrompt) {
+        return generateJson(systemInstruction, userPrompt, null);
+    }
+
+    public String generateJson(String systemInstruction, String userPrompt, Integer maxOutputTokens) {
         if (!geminiConfig.isApiKeyConfigured()) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
                     "Gemini API key is not configured. Please set the GEMINI_API_KEY environment variable in your backend environment.");
         }
 
         List<String> candidateModels = new ArrayList<>();
-        if (geminiConfig.getModel() != null && !geminiConfig.getModel().isBlank()) {
-            candidateModels.add(geminiConfig.getModel());
+        // Prioritize known active working model if previously resolved
+        if (activeModel != null && !activeModel.isBlank()) {
+            candidateModels.add(activeModel);
         }
-        for (String m : List.of("gemini-3.5-flash", "gemini-3.8-flash", "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-3-flash-preview")) {
+        // Then user configured model
+        if (geminiConfig.getModel() != null && !geminiConfig.getModel().isBlank()) {
+            String userModel = geminiConfig.getModel().trim();
+            if (!candidateModels.contains(userModel)) {
+                candidateModels.add(userModel);
+            }
+        }
+        // Then fast official Google Gemini models
+        for (String m : List.of("gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-2.0-flash-lite", "gemini-1.5-pro")) {
             if (!candidateModels.contains(m)) {
                 candidateModels.add(m);
             }
@@ -53,6 +67,9 @@ public class GeminiService {
                 GenerateContentConfig.Builder configBuilder = GenerateContentConfig.builder()
                         .responseMimeType("application/json")
                         .temperature(0.2f);
+                if (maxOutputTokens != null && maxOutputTokens > 0) {
+                    configBuilder.maxOutputTokens(maxOutputTokens);
+                }
                 if (systemInstruction != null && !systemInstruction.isBlank()) {
                     configBuilder.systemInstruction(Content.fromParts(Part.fromText(systemInstruction)));
                 }
@@ -67,6 +84,9 @@ public class GeminiService {
                 if (text == null || text.isBlank()) {
                     throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Gemini returned an empty response.");
                 }
+
+                // Cache working model for fast subsequent calls without fallback loops
+                activeModel = modelName;
                 return cleanJsonResponse(text);
             } catch (ApiException e) {
                 lastApiException = e;
